@@ -223,7 +223,7 @@ def selected_alerts_from_text(text: str) -> list[dict[str, str]]:
     alerts: list[dict[str, str]] = []
     seen: set[str] = set()
     for i, line in enumerate(lines):
-        if '"final_status": "selected"' not in line and '????' not in line:
+        if '"final_status": "selected"' not in line and '抢课成功' not in line:
             continue
         start = max(0, i - 10)
         end = min(len(lines), i + 8)
@@ -237,7 +237,7 @@ def selected_alerts_from_text(text: str) -> list[dict[str, str]]:
         if key in seen:
             continue
         seen.add(key)
-        alerts.append({"course": course or "?????", "message": snippet})
+        alerts.append({"course": course or "未知课程", "message": snippet})
     return alerts[-20:]
 
 
@@ -387,7 +387,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(json.dumps({"ok": True}, ensure_ascii=False).encode("utf-8"))
                     return
-                return self.send_json({"ok": False, "error": "???????"}, 401)
+                return self.send_json({"ok": False, "error": "账号或密码错误"}, 401)
             if path == "/api/logout":
                 token = parse_cookies(self.headers.get("Cookie", "")).get("urpq_session", "")
                 SESSIONS.discard(token)

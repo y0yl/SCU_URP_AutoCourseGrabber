@@ -29,7 +29,7 @@
         <div class="field full"><label class="check"><input id="require_auth" type="checkbox" /> 开启网页访问鉴权：外网访问时需输入上面的网页账号/密码才能看配置和实时日志</label></div>
         <div class="field"><label>模式</label><select id="mode"><option value="grab">grab 轮询抢课</option><option value="list">list 查询课程</option></select></div>
         <div class="field"><label>类别</label><select id="category"><option value="free">free 自由选课</option><option value="intent">intent 推荐/计划</option><option value="plan">plan 方案</option><option value="school">school 校任</option><option value="depart">depart 系任</option></select></div>
-        <div class="field full"><label>course-id?? kch_kxh ???????????????????</label><input id="course_id" placeholder="888006010A07_01" /></div>
+        <div class="field full"><label>course-id（支持 kch_kxh，多个用逗号分隔）</label><input id="course_id" placeholder="888006010A07_01" /></div>
         <div class="field"><label>课程号 kch</label><input id="kch" /></div>
         <div class="field"><label>课序号 kxh</label><input id="kxh" placeholder="01,14" /></div>
         <div class="field"><label>课程名</label><input id="name" /></div>
@@ -77,14 +77,14 @@
     </div>
   </section>
 </main>
-<div id="selectedPopup" class="selected-popup"><h3>?? ????? <button id="selectedClose" class="close">??</button></h3><div id="selectedList"></div></div>
+<div id="selectedPopup" class="selected-popup"><h3>已抢到课程 <button id="selectedClose" class="close">关闭</button></h3><div id="selectedList"></div></div>
 <div id="toast" class="toast"></div>
 <script>
 const ids = ['web_username','web_password','require_auth','urp_username','urp_password','mode','category','course_id','kch','kxh','name','teacher','search','limit','interval','jitter','max_attempts','confirm_attempts','quiet_login','dry_run','once','no_confirm','extra_args'];
 const $ = id => document.getElementById(id);
 let es = null, currentLog = localStorage.getItem('urpq_current_log') || '';
 function toast(msg){ const t=$('toast'); t.textContent=msg; t.style.display='block'; setTimeout(()=>t.style.display='none',2600); }
-function handleSelectedAlerts(alerts){ if(!alerts||!alerts.length) return; const list=$('selectedList'); list.innerHTML=''; alerts.forEach(a=>{ const div=document.createElement('div'); div.className='selected-item'; const b=document.createElement('b'); b.textContent=a.course||'?????'; const pre=document.createElement('pre'); pre.textContent=a.message||''; div.appendChild(b); div.appendChild(pre); list.appendChild(div); }); $('selectedPopup').style.display='block'; document.title='已抢到课程 - 四川大学SCU_URP自动化抢课'; try{ localStorage.setItem('urpq_selected_alerts', JSON.stringify(alerts)); }catch(e){} }
+function handleSelectedAlerts(alerts){ if(!alerts||!alerts.length) return; const list=$('selectedList'); list.innerHTML=''; alerts.forEach(a=>{ const div=document.createElement('div'); div.className='selected-item'; const b=document.createElement('b'); b.textContent=a.course||'未知课程'; const pre=document.createElement('pre'); pre.textContent=a.message||''; div.appendChild(b); div.appendChild(pre); list.appendChild(div); }); $('selectedPopup').style.display='block'; document.title='已抢到课程 - 四川大学SCU_URP自动化抢课'; try{ localStorage.setItem('urpq_selected_alerts', JSON.stringify(alerts)); }catch(e){} }
 function restoreSelectedAlerts(){ try{ const a=JSON.parse(localStorage.getItem('urpq_selected_alerts')||'[]'); if(a.length) handleSelectedAlerts(a); }catch(e){} }
 function getCfg(){ const c={}; ids.forEach(id=>{ const el=$(id); c[id] = el.type==='checkbox' ? el.checked : el.value; }); return c; }
 function setCfg(c){ ids.forEach(id=>{ if(!(id in c)) return; const el=$(id); if(el.type==='checkbox') el.checked=!!c[id]; else el.value=c[id] ?? ''; }); renderCmd(); }

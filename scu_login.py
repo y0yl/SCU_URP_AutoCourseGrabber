@@ -1,25 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-r"""
-???????? URP ??????
+r"""四川大学 URP 登录客户端。
 
-???
-- ? Python requests ???
-- ?? ddddocr ??????
-- ??????????? OCR??????????/??????
-- ?? ScuUrpClient ????????????????? session?
+功能：
+- 使用 Python requests 登录教务系统
+- 使用 ddddocr 识别验证码
+- 登录成功后保持 session，供抢课脚本复用
 
-????
+用法：
   python .\scu_login.py
   python .\scu_login.py --max-login-attempts 10
   python .\scu_login.py --debug-captcha-dir .\captcha_debug
 
-?????
+作为模块使用：
   from scu_login import create_logged_in_client
 
   client = create_logged_in_client()
   resp = client.get("/index")
-  session = client.session        # ?????????
+  session = client.session
 """
 
 from __future__ import annotations
@@ -72,7 +70,7 @@ DEFAULT_HEADERS = {
 
 
 class LoginError(RuntimeError):
-    """?????????????"""
+    """登录过程中的可恢复或致命错误。"""
 
 
 @dataclass(slots=True)
@@ -99,12 +97,12 @@ def _md5_hex(text: str) -> str:
 
 
 def urp_hex_md5(text: str, ver: Optional[str] = None) -> str:
-    # ?? md5.min.js ???ver == "1.8" ????????? {Urp602019}
+    # 参考 md5.min.js：ver == "1.8" 时不追加 {Urp602019}
     return _md5_hex(text if ver == "1.8" else text + URP_MD5_SALT)
 
 
 def build_encrypted_password(plain_password: str) -> str:
-    # ?? onclick ???
+    # 对应页面 onclick 中的密码加密逻辑
     # hex_md5(hex_md5(pwd), '1.8') + '*' + hex_md5(hex_md5(pwd, '1.8'), '1.8')
     left = urp_hex_md5(urp_hex_md5(plain_password), "1.8")
     right = urp_hex_md5(urp_hex_md5(plain_password, "1.8"), "1.8")
@@ -142,7 +140,7 @@ def image_to_png_bytes(img: "Image.Image") -> bytes:
 
 
 def red_mask_image(image_bytes: bytes, *, scale: int = 3, threshold: int = 95, bold: bool = True, crop: bool = False) -> bytes:
-    """???????????????????????"""
+    """提取红色验证码字符并转为黑白图。"""
     if Image is None:
         return image_bytes
 
@@ -157,7 +155,7 @@ def red_mask_image(image_bytes: bytes, *, scale: int = 3, threshold: int = 95, b
     for y in range(height):
         for x in range(width):
             r, g, b = src[x, y]
-            # ?/????R ???? G/B?????????????
+            # 红色字符通常 R 通道明显高于 G/B 通道
             if r >= threshold and r > g * 1.18 and r > b * 1.18:
                 dst[x, y] = 0
                 xs.append(x)
@@ -181,7 +179,7 @@ def red_mask_image(image_bytes: bytes, *, scale: int = 3, threshold: int = 95, b
 
 
 def gray_threshold_image(image_bytes: bytes, *, scale: int = 2, threshold: int = 175) -> bytes:
-    """??????????????????"""
+    """通用灰度阈值处理验证码图片。"""
     if Image is None or ImageOps is None:
         return image_bytes
     img = Image.open(BytesIO(image_bytes)).convert("L")
@@ -195,7 +193,7 @@ def gray_threshold_image(image_bytes: bytes, *, scale: int = 2, threshold: int =
 
 
 def slow_captcha_variants(image_bytes: bytes) -> Iterable[Tuple[str, bytes]]:
-    # ?????????????????? ddddocr ?????
+    # 尝试多种图像预处理变体，提高 ddddocr 识别率
     yield "red_mask_x3", red_mask_image(image_bytes, scale=3, threshold=95, bold=True, crop=False)
     yield "red_mask_crop_x4", red_mask_image(image_bytes, scale=4, threshold=90, bold=True, crop=True)
     yield "red_mask_th110_x3", red_mask_image(image_bytes, scale=3, threshold=110, bold=False, crop=False)
@@ -204,10 +202,10 @@ def slow_captcha_variants(image_bytes: bytes) -> Iterable[Tuple[str, bytes]]:
 
 @dataclass
 class DdddCaptchaSolver:
-    """ddddocr ???????
+    """ddddocr 验证码识别器。
 
-    fast=True ??????? OCR?????? 4 ??????????
-    ??????????? OCR ???????????????
+    fast=True 时先尝试原图 OCR，若结果不是 4 位字母数字则使用备选图像。
+    开启 debug_dir 后会保存 OCR 过程中的图片变体。
     """
 
     debug_dir: str = ""
@@ -217,7 +215,7 @@ class DdddCaptchaSolver:
 
     def __post_init__(self) -> None:
         if ddddocr is None:
-            raise LoginError("ddddocr ????????pip install -r requirements.txt")
+            raise LoginError("ddddocr 未安装，请先运行 pip install -r requirements.txt")
         self._ocr = ddddocr.DdddOcr(show_ad=False)
         if self.debug_dir:
             Path(self.debug_dir).mkdir(parents=True, exist_ok=True)
@@ -235,13 +233,13 @@ class DdddCaptchaSolver:
     def recognize(self, image_bytes: bytes, seq: int = 0) -> CaptchaResult:
         details: list[Tuple[str, str]] = []
 
-        # ??????????????????????????????? 5 ?????
+        # 先用原图识别；若结果有效，可避免多次慢速预处理
         name, code = self._classify("original", image_bytes, seq, 0)
         details.append((name, code))
         if self.fast and is_valid_captcha(code):
             return CaptchaResult(code=code, details=details)
 
-        # ???????????????????? 4 ?????
+        # 原图失败时，再尝试最多 4 种变体
         for idx, (variant_name, variant_bytes) in enumerate(slow_captcha_variants(image_bytes), start=1):
             if idx > self.max_fallback_variants:
                 break
@@ -258,13 +256,13 @@ class DdddCaptchaSolver:
 # -----------------------------
 
 class ScuUrpClient:
-    """????????????
+    """四川大学 URP 登录后的可复用客户端。
 
-    ???????????????
+    该客户端封装了已登录的 requests.Session：
       client = create_logged_in_client()
       client.get('/index')
       client.post('/student/...', data={...})
-      client.session  # ??????? requests.Session
+      client.session  # 已登录的 requests.Session
     """
 
     def __init__(
@@ -312,7 +310,7 @@ class ScuUrpClient:
         return resp.text, extract_input_value(resp.text, "tokenValue")
 
     def fetch_captcha(self) -> bytes:
-        # ?? query ???? refreshCaptcha()???? session ?????????
+        # 加随机 query 模拟 refreshCaptcha()，避免 session 读到缓存验证码
         captcha_url = self.url(CAPTCHA_PATH) + f"?{random.randint(0, 99999999)}"
         resp = self.request("GET", captcha_url, ensure_login=False, headers={"Referer": self.login_url})
         resp.raise_for_status()
@@ -325,7 +323,7 @@ class ScuUrpClient:
             self._log(f"[captcha] #{self.captcha_seq} {result.details} -> {result.code or 'invalid; refresh'}")
             if result.code:
                 return result.code
-        raise LoginError(f"?? OCR ?? {max_refresh} ???????? 4 ???")
+        raise LoginError(f"经 OCR 重试 {max_refresh} 次后仍未识别到 4 位验证码")
 
     def submit_login(self, token_value: str, captcha: str) -> requests.Response:
         data: Dict[str, str] = {
@@ -374,7 +372,7 @@ class ScuUrpClient:
 
         result = LoginResult(False, self.login_url, max_attempts, last_code, last_html)
         self.last_login_result = result
-        raise LoginError("??????????????????\n" + last_html)
+        raise LoginError("登录失败，请检查账号、密码或验证码识别结果\n" + last_html)
 
     def ensure_logged_in(self) -> None:
         if self.last_login_result and self.last_login_result.ok:
@@ -414,7 +412,7 @@ class ScuUrpClient:
         text = re.sub(r"<style[\s\S]*?</style>", " ", text, flags=re.I)
         text = re.sub(r"<[^>]+>", " ", text)
         text = re.sub(r"\s+", " ", text).strip()
-        for key in ["???", "??", "??", "??", "??", "???", "invalid", "badCaptcha"]:
+        for key in ["错误", "失败", "密码", "验证码", "不正确", "账号", "invalid", "badCaptcha"]:
             idx = text.find(key)
             if idx >= 0:
                 return text[max(0, idx - 80): idx + 180]
@@ -437,7 +435,7 @@ def create_logged_in_client(
     debug_captcha_dir: str = "",
     verbose: bool = True,
 ) -> ScuUrpClient:
-    """???????????????????? ScuUrpClient?"""
+    """创建并返回已登录的 ScuUrpClient。"""
     solver = DdddCaptchaSolver(debug_dir=debug_captcha_dir)
     client = ScuUrpClient(username=username, password=password, solver=solver, verbose=verbose)
     client.login(max_attempts=max_attempts)

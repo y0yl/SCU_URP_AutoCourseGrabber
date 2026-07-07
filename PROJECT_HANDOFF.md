@@ -59,7 +59,7 @@ ddddocr>=1.5.6
 - 登录后跳转：`http://zhjw.scu.edu.cn/index`
 - 登录方式：`requests.Session` 保持会话
 - 验证码：本地 `ddddocr`
-- ??????????????????????? `SCU_USERNAME` / `SCU_PASSWORD`????? `--username` / `--password` ??
+- 建议通过环境变量 `SCU_USERNAME` / `SCU_PASSWORD` 配置账号密码，或者使用 `--username` / `--password` 参数覆盖
 
 登录测试：
 

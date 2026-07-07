@@ -39,11 +39,11 @@ FAILED_PATH = "/student/courseSelect/courseSelectFailed/index"
 TRANSIENT_STATUS = {502, 503, 504}
 
 CATEGORY_INFO: dict[str, dict[str, str]] = {
-    "intent": {"path_part": "intentCourse", "dealType": "1", "label": "??/????"},
-    "plan": {"path_part": "planCourse", "dealType": "2", "label": "????"},
-    "school": {"path_part": "schoolCourse", "dealType": "3", "label": "????"},
-    "depart": {"path_part": "departCourse", "dealType": "4", "label": "????"},
-    "free": {"path_part": "freeCourse", "dealType": "5", "label": "????"},
+    "intent": {"path_part": "intentCourse", "dealType": "1", "label": "意向/预选课程"},
+    "plan": {"path_part": "planCourse", "dealType": "2", "label": "计划课程"},
+    "school": {"path_part": "schoolCourse", "dealType": "3", "label": "校任选课程"},
+    "depart": {"path_part": "departCourse", "dealType": "4", "label": "院系课程"},
+    "free": {"path_part": "freeCourse", "dealType": "5", "label": "自由课程"},
 }
 
 
@@ -61,11 +61,11 @@ class CourseTarget:
 
     @property
     def display_name(self) -> str:
-        bits = [self.kcm or "????", self.course_id]
+        bits = [self.kcm or "未知课程", self.course_id]
         if self.teacher:
             bits.append(self.teacher)
         if self.rest is not None:
-            bits.append(f"??={self.rest}")
+            bits.append(f"余量={self.rest}")
         return " | ".join(bits)
 
 
@@ -163,7 +163,7 @@ def split_course_id(course_id: str) -> tuple[str, str, str]:
     if len(parts) == 2:
         return parts[0], parts[1], ""
     if len(parts) != 3:
-        raise SystemExit("--course-id ?? kch_kxh ? kch_kxh_zxjxjhh??? 107121000_01")
+        raise SystemExit("--course-id 格式应为 kch_kxh 或 kch_kxh_zxjxjhh，例如 107121000_01")
     return parts[0], parts[1], parts[2]
 
 
@@ -291,7 +291,7 @@ class CourseGrabber:
                 if status not in TRANSIENT_STATUS and attempt >= 2:
                     raise
                 sleep_s = min(2.0 * attempt, 8.0) + random.uniform(0, 0.8)
-                self.log(f"????/???? status={status} attempt={attempt}/{self.retries}?{sleep_s:.1f}s ???")
+                self.log(f"请求失败/重试 status={status} attempt={attempt}/{self.retries}，{sleep_s:.1f}s 后重试")
                 time.sleep(sleep_s)
         assert last_exc is not None
         raise last_exc
@@ -303,8 +303,8 @@ class CourseGrabber:
         self.token = extract_input_value(resp.text, "tokenValue")
         self.tab_paths = extract_tab_paths(resp.text)
         if not self.token:
-            raise RuntimeError("????????? tokenValue")
-        self.log(f"????????token={self.token[:8]}..., tabs={','.join(self.tab_paths) or 'none'}")
+            raise RuntimeError("未找到选课页面 tokenValue")
+        self.log(f"已读取选课 token={self.token[:8]}..., tabs={','.join(self.tab_paths) or 'none'}")
 
     def category_path(self, category: str) -> str:
         if not self.index_html:
@@ -324,7 +324,7 @@ class CourseGrabber:
             v = extract_input_value(html, "fajhh")
             if v:
                 return v
-        raise RuntimeError("???? fajhh??????????? --fajhh ??")
+        raise RuntimeError("未找到 fajhh，请先打开选课页面或手动指定 --fajhh")
 
     def load_category_page(self, category: str) -> str:
         if category in self.page_html_cache:
@@ -334,7 +334,7 @@ class CourseGrabber:
         resp.raise_for_status()
         self.page_html_cache[category] = resp.text
         self.form_cache[category] = extract_hidden_inputs(resp.text)
-        self.log(f"??? {CATEGORY_INFO[category]['label']} ??")
+        self.log(f"已加载 {CATEGORY_INFO[category]['label']} 页面")
         return resp.text
 
     def query_payload(self, category: str, args: argparse.Namespace) -> dict[str, str]:
@@ -427,7 +427,7 @@ class CourseGrabber:
         if getattr(args, "dump_json", ""):
             dump_obj = raw_payloads[0] if len(raw_payloads) == 1 else raw_payloads
             Path(args.dump_json).write_text(json.dumps(dump_obj, ensure_ascii=False, indent=2), encoding="utf-8")
-            self.log(f"????? courseList JSON: {Path(args.dump_json).resolve()}")
+            self.log(f"已写入 courseList JSON: {Path(args.dump_json).resolve()}")
         return courses
 
     @staticmethod
@@ -473,7 +473,7 @@ class CourseGrabber:
     def submit(self, category: str, target: CourseTarget, args: argparse.Namespace) -> dict[str, Any]:
         payload = self.build_submit_payload(category, target, args)
         if args.dry_run:
-            self.log("dry-run???????? payload")
+            self.log("dry-run：不真实提交，仅打印 payload")
             safe = dict(payload)
             safe["tokenValue"] = safe.get("tokenValue", "")[:8] + "..."
             print(json.dumps(safe, ensure_ascii=False, indent=2))
@@ -536,7 +536,7 @@ class CourseGrabber:
                 quit_resp.raise_for_status()
                 quit_text = html_to_text(quit_resp.text)
                 if target.kch in quit_text and target.kxh in quit_text:
-                    return ConfirmResult("selected", selected=True, message="???????????")
+                    return ConfirmResult("selected", selected=True, message="已在已选课程中确认找到")
 
                 failed_resp = self.request("GET", FAILED_PATH)
                 failed_resp.raise_for_status()
@@ -547,8 +547,8 @@ class CourseGrabber:
                     if not target.kxh or target.kxh in snippet:
                         return ConfirmResult("failed", failed=True, message=snippet)
             except Exception as exc:
-                self.log(f"???????? attempt={i}/{attempts}: {exc!r}")
-        return ConfirmResult("unknown", message="??????????????")
+                self.log(f"确认选课状态失败 attempt={i}/{attempts}: {exc!r}")
+        return ConfirmResult("unknown", message="暂时无法确认最终选课状态")
 
     def grab(self, category: str, args: argparse.Namespace) -> int:
         self.load_index()
@@ -557,7 +557,7 @@ class CourseGrabber:
             kch, kxh, zx = split_course_id(args.course_id)
             direct = CourseTarget(category, args.course_id, args.name or args.submit_name or "", kch, kxh, zx)
             if args.no_poll:
-                self.log(f"?????{direct.display_name}")
+                self.log(f"直接提交：{direct.display_name}")
                 result = self.submit(category, direct, args)
                 print(json.dumps(result, ensure_ascii=False, indent=2))
                 return 0 if result.get("final_status") in {"selected", "unchecked", "dry-run"} else 2
@@ -568,27 +568,27 @@ class CourseGrabber:
             try:
                 courses = self.query_courses(category, args)
             except Exception as exc:
-                self.log(f"? {attempt} ??????{exc!r}")
+                self.log(f"第 {attempt} 次查询失败：{exc!r}")
                 courses = []
             available = [c for c in courses if c.rest is None or c.rest > 0]
 
             if courses:
                 summary = "; ".join(c.display_name for c in courses[:5])
-                self.log(f"? {attempt} ???? {len(courses)} ????? {len(available)} ??{summary}")
+                self.log(f"第 {attempt} 次查询到 {len(courses)} 门课程，可提交 {len(available)} 门：{summary}")
             else:
-                self.log(f"? {attempt} ????????")
+                self.log(f"第 {attempt} 次未匹配到课程")
 
             for target in available:
-                self.log(f"?????{target.display_name}")
+                self.log(f"提交目标：{target.display_name}")
                 result = self.submit(category, target, args)
                 print(json.dumps(result, ensure_ascii=False, indent=2), flush=True)
                 status = str(result.get("final_status", ""))
                 if status == "dry-run":
                     return 0
                 if status in {"selected", "unchecked"}:
-                    self.log("????" if status == "selected" else "??????????????")
+                    self.log("抢课成功" if status == "selected" else "已提交，但暂时无法确认")
                     return 0
-                self.log(f"?????/????final_status={status}, result={str(result.get('result', ''))[:120]}")
+                self.log(f"提交失败/未选中 final_status={status}, result={str(result.get('result', ''))[:120]}")
 
             if args.once or (args.max_attempts and attempt >= args.max_attempts):
                 return 2
@@ -613,7 +613,7 @@ def create_client_with_retry(args: argparse.Namespace) -> ScuUrpClient:
         except Exception as exc:
             last_exc = exc
             sleep_s = min(4 * i, 20) + random.uniform(0, 1.5)
-            print(f"[{now()}] ???? attempt={i}/{args.login_retries}: {exc!r}?{sleep_s:.1f}s ???", flush=True)
+            print(f"[{now()}] 登录失败 attempt={i}/{args.login_retries}: {exc!r}，{sleep_s:.1f}s 后重试", flush=True)
             time.sleep(sleep_s)
     assert last_exc is not None
     raise last_exc
@@ -623,19 +623,19 @@ def print_courses(courses: list[CourseTarget], *, limit: int) -> None:
     for idx, c in enumerate(courses[:limit], 1):
         print(f"{idx:03d}. {c.display_name}")
     if len(courses) > limit:
-        print(f"... ?? {len(courses) - limit} ??? --limit ??")
+        print(f"... 还有 {len(courses) - limit} 条，使用 --limit 调整")
 
 
 def add_common_sub_args(sp: argparse.ArgumentParser) -> None:
     sp.add_argument("--category", choices=sorted(CATEGORY_INFO), default="plan")
     sp.add_argument("--fajhh", default="")
-    sp.add_argument("--course-id", default="", help="?? ID??? kch_kxh??????? kch_kxh_zxjxjhh????????")
-    sp.add_argument("--kch", default="", help="?????????????")
-    sp.add_argument("--kxh", default="", help="???/??????????????")
-    sp.add_argument("--name", default="", help="?????")
-    sp.add_argument("--teacher", default="", help="?????")
-    sp.add_argument("--search", default="", help="??/?????")
-    sp.add_argument("--kkxsh", default="", help="?????????")
+    sp.add_argument("--course-id", default="", help="课程 ID，可用 kch_kxh，多个用逗号分隔，也可使用完整 kch_kxh_zxjxjhh")
+    sp.add_argument("--kch", default="", help="课程号，多个用逗号分隔")
+    sp.add_argument("--kxh", default="", help="课序号，多个用逗号分隔")
+    sp.add_argument("--name", default="", help="课程名称")
+    sp.add_argument("--teacher", default="", help="教师姓名")
+    sp.add_argument("--search", default="", help="按名称/教师模糊搜索")
+    sp.add_argument("--kkxsh", default="", help="开课院系号")
     sp.add_argument("--kclbdm", default="")
     sp.add_argument("--kclbdm2", default="")
     sp.add_argument("--kzh", default="")
@@ -648,20 +648,20 @@ def add_common_sub_args(sp: argparse.ArgumentParser) -> None:
     sp.add_argument("--dump-json", default="")
     sp.add_argument("--limit", type=int, default=50)
     sp.add_argument("--dry-run", action="store_true")
-    sp.add_argument("--submit-name", default="", help="??????? kcms ? ???_??? ??")
-    sp.add_argument("--input-code", default="", help="???????????????")
-    sp.add_argument("--skip-waitingfor", action="store_true", help="??????????????? waitingfor")
-    sp.add_argument("--no-confirm", dest="confirm", action="store_false", help="?????????/???")
+    sp.add_argument("--submit-name", default="", help="提交时覆盖 kcms，通常为 课程名_教师名")
+    sp.add_argument("--input-code", default="", help="选课提交验证码，通常无需填写")
+    sp.add_argument("--skip-waitingfor", action="store_true", help="提交后跳过 waitingfor 确认步骤")
+    sp.add_argument("--no-confirm", dest="confirm", action="store_false", help="不检查已选/失败页面确认结果")
     sp.set_defaults(confirm=True)
-    sp.add_argument("--confirm-attempts", type=int, default=4, help="???????")
+    sp.add_argument("--confirm-attempts", type=int, default=4, help="确认结果重试次数")
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="四川大学SCU_URP自动化抢课")
-    p.add_argument("--username", default=None, help="???? scu_login.py/env ????")
-    p.add_argument("--password", default=None, help="???? scu_login.py/env ????")
+    p.add_argument("--username", default=None, help="覆盖 scu_login.py/env 中的用户名")
+    p.add_argument("--password", default=None, help="覆盖 scu_login.py/env 中的密码")
     p.add_argument("--max-login-attempts", type=int, default=10)
-    p.add_argument("--login-retries", type=int, default=6, help="???? 502/??????????")
+    p.add_argument("--login-retries", type=int, default=6, help="登录遇到 502/网络错误时的重试次数")
     p.add_argument("--quiet-login", action="store_true")
     p.add_argument("--debug-captcha-dir", default="")
 
@@ -671,9 +671,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.choices["grab"].add_argument("--interval", type=float, default=1.2)
     sub.choices["grab"].add_argument("--jitter", type=float, default=0.3)
-    sub.choices["grab"].add_argument("--max-attempts", type=int, default=0, help="0 ??????")
+    sub.choices["grab"].add_argument("--max-attempts", type=int, default=0, help="0 表示一直轮询")
     sub.choices["grab"].add_argument("--once", action="store_true")
-    sub.choices["grab"].add_argument("--no-poll", action="store_true", help="???? --course-id ????")
+    sub.choices["grab"].add_argument("--no-poll", action="store_true", help="不轮询，直接按 --course-id 提交")
     return p
 
 
@@ -690,23 +690,23 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.command == "submit":
         grabber.load_index()
         if not args.course_id:
-            raise SystemExit("submit ?? --course-id")
+            raise SystemExit("submit 需要 --course-id")
         if len(csv_values(args.course_id)) != 1:
-            raise SystemExit("submit ????? --course-id??????? grab")
+            raise SystemExit("submit 只支持单个 --course-id；多个目标请使用 grab")
         if course_id_is_full(args.course_id):
             kch, kxh, zx = split_course_id(args.course_id)
             target = CourseTarget(args.category, args.course_id, args.name or args.submit_name, kch, kxh, zx)
         else:
             matches = grabber.query_courses(args.category, args)
             if not matches:
-                raise SystemExit(f"????? course-id ?????{args.course_id}")
+                raise SystemExit(f"未找到 course-id 对应课程：{args.course_id}")
             target = matches[0]
         print(json.dumps(grabber.submit(args.category, target, args), ensure_ascii=False, indent=2))
         return 0
 
     if args.command == "grab":
         if not (args.course_id or args.kch or args.name):
-            raise SystemExit("grab ???? --course-id?--kch ? --name ??")
+            raise SystemExit("grab 至少需要 --course-id、--kch 或 --name 之一")
         return grabber.grab(args.category, args)
 
     return 1
