@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>URP 抢课可视化控制台</title>
+  <title>四川大学SCU_URP自动化抢课</title>
   <style>
     :root{--bg:#0b1020;--panel:#121a2f;--panel2:#17213b;--text:#e8eefc;--muted:#98a7c8;--line:#263450;--brand:#65d3ff;--ok:#57d68d;--warn:#ffd166;--bad:#ff6b6b;--shadow:0 18px 50px rgba(0,0,0,.35)}
     *{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at top left,#19315d 0,#0b1020 36%,#080b14 100%);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,"Microsoft YaHei",sans-serif}
@@ -14,7 +14,7 @@
 </head>
 <body>
 <header>
-  <div><h1>URP 抢课可视化控制台</h1><div class="sub">修改配置 · 启动/停止任务 · 实时查看日志</div></div>
+  <div><h1>四川大学SCU_URP自动化抢课</h1><div class="sub">修改配置 · 启动/停止任务 · 实时查看日志</div></div>
   <div class="pill"><span id="dot" class="dot"></span><span id="statusText">检查中</span></div>
 </header>
 <main>
@@ -84,7 +84,7 @@ const ids = ['web_username','web_password','require_auth','urp_username','urp_pa
 const $ = id => document.getElementById(id);
 let es = null, currentLog = localStorage.getItem('urpq_current_log') || '';
 function toast(msg){ const t=$('toast'); t.textContent=msg; t.style.display='block'; setTimeout(()=>t.style.display='none',2600); }
-function handleSelectedAlerts(alerts){ if(!alerts||!alerts.length) return; const list=$('selectedList'); list.innerHTML=''; alerts.forEach(a=>{ const div=document.createElement('div'); div.className='selected-item'; const b=document.createElement('b'); b.textContent=a.course||'?????'; const pre=document.createElement('pre'); pre.textContent=a.message||''; div.appendChild(b); div.appendChild(pre); list.appendChild(div); }); $('selectedPopup').style.display='block'; document.title='?? ????? - URP ???'; try{ localStorage.setItem('urpq_selected_alerts', JSON.stringify(alerts)); }catch(e){} }
+function handleSelectedAlerts(alerts){ if(!alerts||!alerts.length) return; const list=$('selectedList'); list.innerHTML=''; alerts.forEach(a=>{ const div=document.createElement('div'); div.className='selected-item'; const b=document.createElement('b'); b.textContent=a.course||'?????'; const pre=document.createElement('pre'); pre.textContent=a.message||''; div.appendChild(b); div.appendChild(pre); list.appendChild(div); }); $('selectedPopup').style.display='block'; document.title='已抢到课程 - 四川大学SCU_URP自动化抢课'; try{ localStorage.setItem('urpq_selected_alerts', JSON.stringify(alerts)); }catch(e){} }
 function restoreSelectedAlerts(){ try{ const a=JSON.parse(localStorage.getItem('urpq_selected_alerts')||'[]'); if(a.length) handleSelectedAlerts(a); }catch(e){} }
 function getCfg(){ const c={}; ids.forEach(id=>{ const el=$(id); c[id] = el.type==='checkbox' ? el.checked : el.value; }); return c; }
 function setCfg(c){ ids.forEach(id=>{ if(!(id in c)) return; const el=$(id); if(el.type==='checkbox') el.checked=!!c[id]; else el.value=c[id] ?? ''; }); renderCmd(); }
@@ -100,7 +100,7 @@ function connectStream(file=''){ if(es) es.close(); const url='/api/stream'+(fil
 async function status(updateLog=true){ const j=await api('/api/status'); $('dot').className='dot '+(j.running?'on':'off'); $('statusText').textContent=j.running?'运行中':'未运行'; $('startBtn').disabled=j.running; $('stopBtn').disabled=!j.running; if(j.run){ $('runInfo').textContent=`PID ${j.run.pid||'-'} · ${j.run.started_at||''} · ${j.run.stdout||''}`; currentLog=j.run.stdout || currentLog; if(currentLog) localStorage.setItem('urpq_current_log', currentLog); } handleSelectedAlerts(j.selected_alerts); const s=j.stats||{}; $('sAttempts').textContent=s.attempts||0; $('sSubmit').textContent=s.submit||0; $('sSelected').textContent=s.selected||0; $('sFailed').textContent=s.failed||0; $('sBad').textContent=s.bad_gateway||0; }
 async function refreshLogs(){ const j=await api('/api/logs'); const sel=$('logSelect'); sel.innerHTML=''; const all=[...(j.runs||[]).map(r=>r.stdout), ...(j.files||[])].filter(Boolean); [...new Set(all)].forEach(f=>{const o=document.createElement('option'); o.value=f; o.textContent=f; sel.appendChild(o);}); const saved=localStorage.getItem('urpq_current_log'); if(saved && [...sel.options].some(o=>o.value===saved)) sel.value=saved; else if(currentLog && [...sel.options].some(o=>o.value===currentLog)) sel.value=currentLog; }
 async function loadTail(){ const f=$('logSelect').value || currentLog; if(f) localStorage.setItem('urpq_current_log', f); const j=await api('/api/tail?lines=500&file='+encodeURIComponent(f)); $('terminal').textContent=j.text||''; handleSelectedAlerts(j.selected_alerts); const s=j.stats||{}; $('sAttempts').textContent=s.attempts||0; $('sSubmit').textContent=s.submit||0; $('sSelected').textContent=s.selected||0; $('sFailed').textContent=s.failed||0; $('sBad').textContent=s.bad_gateway||0; connectStream(f); }
-$('selectedClose').onclick=()=>{ $('selectedPopup').style.display='none'; document.title='URP ????????'; };
+$('selectedClose').onclick=()=>{ $('selectedPopup').style.display='none'; document.title='四川大学SCU_URP自动化抢课'; };
 $('saveBtn').onclick=()=>saveConfig().catch(e=>toast(e.message)); $('startBtn').onclick=()=>start().catch(e=>toast(e.message)); $('stopBtn').onclick=()=>stop().catch(e=>toast(e.message)); $('refreshBtn').onclick=()=>{refreshLogs();status();}; $('loadLogBtn').onclick=()=>loadTail().catch(e=>toast(e.message)); $('clearViewBtn').onclick=()=>{$('terminal').textContent=''};
 (async()=>{ restoreSelectedAlerts(); await loadConfig(); await refreshLogs(); await status(); connectStream(); setInterval(()=>status(false),3000); })().catch(e=>toast(e.message));
 </script>

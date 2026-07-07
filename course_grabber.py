@@ -1,6 +1,6 @@
 ﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""SCU URP course grabber.
+"""四川大学SCU_URP自动化抢课。
 
 This script reuses ``scu_login.py`` for login, queries course lists, polls for
 available seats, and submits the same two-step flow as the browser:
@@ -657,7 +657,7 @@ def add_common_sub_args(sp: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="SCU URP course grabber")
+    p = argparse.ArgumentParser(description="四川大学SCU_URP自动化抢课")
     p.add_argument("--username", default=None, help="???? scu_login.py/env ????")
     p.add_argument("--password", default=None, help="???? scu_login.py/env ????")
     p.add_argument("--max-login-attempts", type=int, default=10)

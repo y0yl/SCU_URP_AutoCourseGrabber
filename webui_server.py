@@ -271,7 +271,7 @@ def parse_cookies(header: str) -> dict[str, str]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "URPQWebUI/1.0"
+    server_version = "SCU_URP_AutoCourse/1.0"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         print("[%s] %s" % (datetime.now().strftime("%H:%M:%S"), fmt % args))
@@ -498,7 +498,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="URP抢课可视化网页")
+    parser = argparse.ArgumentParser(description="四川大学SCU_URP自动化抢课可视化网页")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()

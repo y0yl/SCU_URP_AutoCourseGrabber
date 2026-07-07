@@ -1,6 +1,7 @@
-﻿# SCU URP 抢课项目交接说明
+﻿# 四川大学SCU_URP自动化抢课 项目交接说明
 
-本项目目录：`C:\Users\yi\Documents\urpQ`
+本项目：**四川大学SCU_URP自动化抢课**  
+本地目录：`C:\Users\yi\Documents\urpQ`
 
 ## 新会话快速启动提示
 
