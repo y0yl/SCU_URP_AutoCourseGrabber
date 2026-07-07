@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>&#30331;&#24405; URP &#25511;&#21046;&#21488;</title>
+  <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at top,#1d3769,#08101f 55%,#050812);color:#e8eefc;font-family:ui-sans-serif,system-ui,"Microsoft YaHei",sans-serif}.card{width:min(420px,92vw);background:#121a2f;border:1px solid #263450;border-radius:20px;box-shadow:0 18px 50px rgba(0,0,0,.35);padding:26px}h1{margin:0 0 8px;font-size:22px}.sub{color:#98a7c8;margin-bottom:20px}label{display:block;font-size:12px;color:#98a7c8;margin:12px 0 6px}input{width:100%;box-sizing:border-box;border:1px solid #263450;background:#0b1224;color:#e8eefc;border-radius:12px;padding:12px;outline:none}button{width:100%;margin-top:18px;border:0;border-radius:12px;padding:12px;background:#65d3ff;color:#06101f;font-weight:800;cursor:pointer}.err{color:#ff6b6b;min-height:22px;margin-top:12px}.hint{font-size:12px;color:#98a7c8;margin-top:14px;line-height:1.5}</style>
+</head>
+<body>
+  <div class="card">
+    <h1>URP &#25511;&#21046;&#21488;&#30331;&#24405;</h1>
+    <div class="sub">&#36755;&#20837;&#32593;&#39029;&#35775;&#38382;&#36134;&#21495;&#21644;&#23494;&#30721;&#21518;&#65292;&#21487;&#37325;&#26032;&#26597;&#30475;&#23454;&#26102;&#26085;&#24535;&#12290;</div>
+    <label>&#36134;&#21495;</label><input id="u" autocomplete="username" autofocus />
+    <label>&#23494;&#30721;</label><input id="p" type="password" autocomplete="current-password" />
+    <button id="btn">&#30331;&#24405;</button>
+    <div id="err" class="err"></div>
+    <div class="hint">&#40664;&#35748;&#36134;&#21495;&#20026; admin&#65307;&#22914;&#26524;&#37197;&#32622;&#37324;&#21551;&#29992;&#20102;&#35775;&#38382;&#37492;&#26435;&#20294;&#26410;&#35774;&#32622;&#32593;&#39029;&#23494;&#30721;&#65292;&#21017;&#23494;&#30721;&#30041;&#31354;&#12290;</div>
+  </div>
+<script>
+async function login(){
+  const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u.value,password:p.value})});
+  const j=await r.json().catch(()=>({}));
+  if(r.ok){ location.href='/'; } else { err.textContent=j.error||'login failed'; }
+}
+btn.onclick=login; p.onkeydown=e=>{if(e.key==='Enter')login()}; u.onkeydown=e=>{if(e.key==='Enter')login()};
+</script>
+</body>
+</html>
