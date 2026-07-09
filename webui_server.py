@@ -32,6 +32,15 @@ CONFIG_PATH = WEB_DIR / "config.json"
 RUNS_PATH = WEB_DIR / "runs.json"
 LOG_DIR = ROOT / "logs"
 COURSE_GRABBER = ROOT / "course_grabber.py"
+BASE_PATH = "/urpQ"
+
+def normalize_path(raw_path: str) -> str:
+    p = urlparse(raw_path).path
+    if p == BASE_PATH:
+        return "/"
+    if p.startswith(BASE_PATH + "/"):
+        return p[len(BASE_PATH):] or "/"
+    return p
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "web_username": "admin",
@@ -41,21 +50,23 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "urp_password": "",
     "mode": "grab",
     "category": "free",
+    "match_mode": "course",
     "course_id": "888006010A07_01,888006010A07_14",
-    "kch": "888006010A07",
+    "kch": "",
     "kxh": "",
-    "name": "体育-3网球",
+    "name": "",
     "teacher": "",
     "search": "",
     "limit": 20,
-    "interval": 1.35,
-    "jitter": 0.9,
+    "interval": 2.0,
+    "jitter": 1.3,
     "max_attempts": 600,
     "confirm_attempts": 4,
     "quiet_login": True,
     "dry_run": False,
     "once": False,
     "no_confirm": False,
+    "system_not_open": False,
     "extra_args": "",
 }
 
@@ -90,7 +101,7 @@ def norm_config(data: dict[str, Any]) -> dict[str, Any]:
     for k in cfg:
         if k in data:
             cfg[k] = data[k]
-    for k in ["require_auth", "quiet_login", "dry_run", "once", "no_confirm"]:
+    for k in ["require_auth", "quiet_login", "dry_run", "once", "no_confirm", "system_not_open"]:
         cfg[k] = bool(cfg.get(k))
     for k in ["limit", "max_attempts", "confirm_attempts"]:
         try:
@@ -104,8 +115,17 @@ def norm_config(data: dict[str, Any]) -> dict[str, Any]:
             cfg[k] = DEFAULT_CONFIG[k]
     if cfg["mode"] not in {"list", "grab"}:
         cfg["mode"] = "grab"
-    if cfg["category"] not in {"intent", "plan", "school", "depart", "free"}:
-        cfg["category"] = "free"
+    # ?????????????? category ??????? CLI?
+    cfg["category"] = "free"
+    if cfg.get("match_mode") not in {"course", "name"}:
+        cfg["match_mode"] = "course"
+    if cfg["match_mode"] == "course":
+        cfg["name"] = ""
+        cfg["teacher"] = ""
+    elif cfg["match_mode"] == "name":
+        cfg["course_id"] = ""
+        cfg["kch"] = ""
+        cfg["kxh"] = ""
     return cfg
 
 
@@ -133,13 +153,14 @@ def build_args(cfg: dict[str, Any]) -> list[str]:
         value = str(cfg.get(key) or "").strip()
         if value:
             args += [flag, value]
-    if int(cfg.get("limit") or 0) > 0:
-        args += ["--limit", str(int(cfg["limit"]))]
-    if cfg.get("dry_run"):
-        args.append("--dry-run")
-    if cfg.get("no_confirm"):
-        args.append("--no-confirm")
-    if cfg["mode"] == "grab":
+    if cfg["mode"] == "list":
+        if int(cfg.get("limit") or 0) > 0:
+            args += ["--limit", str(int(cfg["limit"]))]
+    elif cfg["mode"] == "grab":
+        if cfg.get("dry_run"):
+            args.append("--dry-run")
+        if cfg.get("no_confirm"):
+            args.append("--no-confirm")
         args += ["--interval", str(cfg["interval"]), "--jitter", str(cfg["jitter"])]
         if int(cfg.get("max_attempts") or 0) > 0:
             args += ["--max-attempts", str(int(cfg["max_attempts"]))]
@@ -147,6 +168,8 @@ def build_args(cfg: dict[str, Any]) -> list[str]:
             args += ["--confirm-attempts", str(int(cfg["confirm_attempts"]))]
         if cfg.get("once"):
             args.append("--once")
+        if cfg.get("system_not_open"):
+            args.append("--system-not-open")
     args += split_extra_args(str(cfg.get("extra_args") or ""))
     return args
 
@@ -256,9 +279,15 @@ def redact_run(run: dict[str, Any]) -> dict[str, Any]:
     return safe
 
 
-def public_config(cfg: dict[str, Any]) -> dict[str, Any]:
-    """Return config for browser. Passwords are kept in inputs for local editing."""
-    return cfg
+def public_config(cfg: dict[str, Any], *, admin: bool = False) -> dict[str, Any]:
+    """Return config for browser without exposing web-admin fields."""
+    out = dict(cfg)
+    for k in ["web_username", "web_password", "require_auth"]:
+        out.pop(k, None)
+    if not admin:
+        out["urp_username"] = ""
+        out["urp_password"] = ""
+    return out
 
 
 def parse_cookies(header: str) -> dict[str, str]:
@@ -270,6 +299,62 @@ def parse_cookies(header: str) -> dict[str, str]:
     return out
 
 
+def find_run_by_token(token: str) -> dict[str, Any] | None:
+    if not token:
+        return None
+    with CURRENT["lock"]:
+        run = CURRENT.get("run")
+        if isinstance(run, dict) and run.get("run_token") == token:
+            return run
+    for item in read_json(RUNS_PATH, []):
+        if isinstance(item, dict) and item.get("run_token") == token:
+            return item
+    return None
+
+
+def run_owns_file(run: dict[str, Any] | None, target: Path) -> bool:
+    if not run:
+        return False
+    try:
+        target = target.resolve()
+    except Exception:
+        return False
+    for key in ("stdout", "stderr"):
+        value = run.get(key)
+        if value:
+            try:
+                if Path(value).resolve() == target:
+                    return True
+            except Exception:
+                pass
+    return False
+
+
+def owner_visible_run(run: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not run:
+        return None
+    safe = redact_run(run)
+    safe.pop("run_token", None)
+    safe.pop("args", None)
+    cfg = safe.get("config") if isinstance(safe, dict) else {}
+    student = ""
+    if isinstance(cfg, dict):
+        student = str(cfg.get("urp_username") or "").strip()
+        for k in ["web_username", "web_password", "require_auth"]:
+            cfg.pop(k, None)
+    if not student:
+        student = "未填写学号"
+    stdout = str(safe.get("stdout") or "")
+    stderr = str(safe.get("stderr") or "")
+    safe["student_id"] = student
+    safe["log_label"] = f"学号 {student} 的实时日志"
+    if stdout:
+        safe["stdout"] = safe["log_label"]
+    if stderr:
+        safe["stderr"] = f"学号 {student} 的错误日志"
+    return safe
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "SCU_URP_AutoCourse/1.0"
 
@@ -278,19 +363,32 @@ class Handler(BaseHTTPRequestHandler):
 
 
     def is_authed(self) -> bool:
+        return self.is_admin()
+
+    def is_admin(self) -> bool:
         cfg = norm_config(read_json(CONFIG_PATH, DEFAULT_CONFIG))
         if not cfg.get("require_auth"):
             return True
         token = parse_cookies(self.headers.get("Cookie", "")).get("urpq_session", "")
         return bool(token and token in SESSIONS)
 
+    def owner_token(self, qs: dict[str, list[str]] | None = None) -> str:
+        if qs is None:
+            qs = parse_qs(urlparse(self.path).query)
+        if qs and qs.get("run_token"):
+            return qs.get("run_token", [""])[0]
+        return parse_cookies(self.headers.get("Cookie", "")).get("urpq_run", "")
+
+    def owner_run(self, qs: dict[str, list[str]] | None = None) -> dict[str, Any] | None:
+        return find_run_by_token(self.owner_token(qs))
+
     def require_auth_or_401(self) -> bool:
-        if self.is_authed():
+        if self.is_admin():
             return True
         if urlparse(self.path).path.startswith("/api/"):
             return self.send_json({"ok": False, "error": "unauthorized"}, 401) or False
         self.send_response(302)
-        self.send_header("Location", "/login.html")
+        self.send_header("Location", BASE_PATH + "/login.html")
         self.end_headers()
         return False
 
@@ -312,37 +410,44 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         ensure_dirs()
         parsed = urlparse(self.path)
-        path = parsed.path
+        path = normalize_path(self.path)
         qs = parse_qs(parsed.query)
         update_current_run_status()
         if path == "/":
             path = "/index.html"
-        if path == "/login.html":
-            pass
-        elif not self.require_auth_or_401():
-            return
         if path == "/api/config":
-            return self.send_json(public_config(norm_config(read_json(CONFIG_PATH, DEFAULT_CONFIG))))
+            return self.send_json(public_config(norm_config(read_json(CONFIG_PATH, DEFAULT_CONFIG)), admin=self.is_admin()))
         if path == "/api/status":
+            admin = self.is_admin()
+            owner_run = self.owner_run(qs)
             with CURRENT["lock"]:
                 proc = CURRENT.get("process")
-                run = CURRENT.get("run")
+                current_run = CURRENT.get("run")
                 alive = process_alive(proc)
                 code = None if not proc else proc.poll()
-            visible_run = run or latest_run()
+            visible_run = (current_run or latest_run()) if admin else owner_run
             active_log = visible_run.get("stdout") if visible_run else None
             text = tail_file(Path(active_log), 300) if active_log else ""
-            return self.send_json({"running": alive, "returncode": code, "run": redact_run(visible_run) if visible_run else None, "stats": stats_from_text(text), "selected_alerts": selected_alerts_from_text(text)})
+            visible_alive = alive if (admin or (owner_run and current_run and owner_run.get("run_token") == current_run.get("run_token"))) else False
+            return self.send_json({"running": visible_alive, "returncode": code if visible_alive or admin else None, "run": owner_visible_run(visible_run) if visible_run else None, "stats": stats_from_text(text), "selected_alerts": selected_alerts_from_text(text)})
         if path == "/api/logs":
             runs = read_json(RUNS_PATH, [])
-            files = sorted(LOG_DIR.glob("*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
-            return self.send_json({"runs": [redact_run(r) for r in runs], "files": [str(p) for p in files[:100]]})
+            if self.is_admin():
+                files = sorted(LOG_DIR.glob("*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+                return self.send_json({"runs": [owner_visible_run(r) for r in runs], "files": [owner_visible_run(r).get("stdout") for r in runs if owner_visible_run(r) and owner_visible_run(r).get("stdout")]})
+            token = self.owner_token(qs)
+            mine = [r for r in runs if isinstance(r, dict) and r.get("run_token") == token]
+            return self.send_json({"runs": [owner_visible_run(r) for r in mine], "files": [owner_visible_run(r).get("stdout") for r in mine if owner_visible_run(r) and owner_visible_run(r).get("stdout")]})
         if path == "/api/tail":
             file_arg = qs.get("file", [""])[0]
             lines = int(qs.get("lines", ["200"])[0] or 200)
+            admin = self.is_admin()
             with CURRENT["lock"]:
                 run = CURRENT.get("run")
-            visible_run = run or latest_run()
+            visible_run = (run or latest_run()) if admin else self.owner_run(qs)
+            visible_safe = owner_visible_run(visible_run) if visible_run else None
+            if file_arg and visible_safe and file_arg in {visible_safe.get("stdout"), visible_safe.get("stderr"), visible_safe.get("log_label")}:
+                file_arg = ""
             target = Path(file_arg) if file_arg else Path(visible_run["stdout"]) if visible_run else None
             if not target:
                 return self.send_json({"text": "", "stats": {}})
@@ -350,8 +455,11 @@ class Handler(BaseHTTPRequestHandler):
             # Only serve project logs to avoid arbitrary file read from browser.
             if LOG_DIR.resolve() not in [target.parent, *target.parents]:
                 return self.send_json({"error": "log path out of logs directory"}, 400)
+            if not admin and not run_owns_file(visible_run, target):
+                return self.send_json({"error": "log not owned by this browser"}, 403)
             text = tail_file(target, lines)
-            return self.send_json({"file": str(target), "text": text, "stats": stats_from_text(text), "selected_alerts": selected_alerts_from_text(text)})
+            label = (visible_safe or {}).get("stdout") or (visible_safe or {}).get("log_label") or "实时日志"
+            return self.send_json({"file": label, "text": text, "stats": stats_from_text(text), "selected_alerts": selected_alerts_from_text(text)})
         if path == "/api/stream":
             return self.stream_logs(qs)
 
@@ -371,7 +479,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         ensure_dirs()
-        path = urlparse(self.path).path
+        path = normalize_path(self.path)
         try:
             data = self.read_body_json()
             if path == "/api/login":
@@ -397,21 +505,23 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(b"{\"ok\":true}")
                 return
-            if not self.require_auth_or_401():
-                return
             if path == "/api/config":
+                if not self.require_auth_or_401():
+                    return
                 cfg = norm_config(data)
                 write_json(CONFIG_PATH, cfg)
                 return self.send_json({"ok": True, "config": cfg})
             if path == "/api/start":
-                cfg = norm_config(data or read_json(CONFIG_PATH, DEFAULT_CONFIG))
-                write_json(CONFIG_PATH, cfg)
+                cfg = norm_config({**read_json(CONFIG_PATH, DEFAULT_CONFIG), **(data or {})})
+                if self.is_admin():
+                    write_json(CONFIG_PATH, cfg)
                 with CURRENT["lock"]:
                     if process_alive(CURRENT.get("process")):
                         return self.send_json({"ok": False, "error": "已有任务正在运行"}, 409)
                     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     suffix = secrets.token_hex(3)
                     base = f"{cfg['mode']}_{cfg['category']}_{stamp}_{suffix}"
+                    run_token = secrets.token_urlsafe(24)
                     stdout = LOG_DIR / f"{base}.log"
                     stderr = LOG_DIR / f"{base}.err.log"
                     args = build_args(cfg)
@@ -419,6 +529,9 @@ class Handler(BaseHTTPRequestHandler):
                     out = open(stdout, "a", encoding="utf-8", buffering=1)
                     err = open(stderr, "a", encoding="utf-8", buffering=1)
                     child_env = os.environ.copy()
+                    # Force UTF-8 for child process logs and argument/env handling on Windows.
+                    child_env["PYTHONUTF8"] = "1"
+                    child_env["PYTHONIOENCODING"] = "utf-8"
                     if str(cfg.get("urp_username") or "").strip():
                         child_env["SCU_USERNAME"] = str(cfg.get("urp_username")).strip()
                     if str(cfg.get("urp_password") or ""):
@@ -428,13 +541,27 @@ class Handler(BaseHTTPRequestHandler):
                         "pid": proc.pid, "status": "running", "returncode": None,
                         "started_at": datetime.now().isoformat(timespec="seconds"),
                         "ended_at": None, "stdout": str(stdout.resolve()), "stderr": str(stderr.resolve()),
-                        "args": args, "config": cfg,
+                        "args": args, "config": cfg, "run_token": run_token,
                     }
                     CURRENT["process"] = proc
                     CURRENT["run"] = run
                     add_run(run)
-                return self.send_json({"ok": True, "run": redact_run(run) if run else None})
+                body = json.dumps({"ok": True, "run": owner_visible_run(run) if run else None, "run_token": run_token}, ensure_ascii=False).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Set-Cookie", f"urpq_run={run_token}; SameSite=Lax; Path=/")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if path == "/api/stop":
+                if not self.is_admin():
+                    owner = self.owner_run()
+                    with CURRENT["lock"]:
+                        current = CURRENT.get("run")
+                    if not owner or not current or owner.get("run_token") != current.get("run_token"):
+                        return self.send_json({"ok": False, "error": "not your running task"}, 403)
                 with CURRENT["lock"]:
                     proc = CURRENT.get("process")
                     run = CURRENT.get("run")
@@ -464,14 +591,28 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Connection", "keep-alive")
         self.end_headers()
         file_arg = qs.get("file", [""])[0]
+        admin = self.is_admin()
+        owner = self.owner_run(qs) if not admin else None
         pos = 0
+        if not admin and not owner:
+            self.wfile.write(b"data: {\"text\":\"unauthorized\",\"running\":false}\n\n")
+            self.wfile.flush()
+            return
         while True:
             update_current_run_status()
             with CURRENT["lock"]:
                 run = CURRENT.get("run")
                 running = process_alive(CURRENT.get("process"))
-            visible_run = run or latest_run()
+            visible_run = (run or latest_run()) if admin else owner
+            visible_safe = owner_visible_run(visible_run) if visible_run else None
+            if file_arg and visible_safe and file_arg in {visible_safe.get("stdout"), visible_safe.get("stderr"), visible_safe.get("log_label")}:
+                file_arg = ""
             target = Path(file_arg) if file_arg else Path(visible_run["stdout"]) if visible_run else None
+            if target and not admin and not run_owns_file(visible_run, Path(target)):
+                payload = json.dumps({"text": "log not owned by this browser", "running": False}, ensure_ascii=False)
+                self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
+                self.wfile.flush()
+                return
             if target and target.exists():
                 size = target.stat().st_size
                 if pos == 0:
@@ -484,7 +625,8 @@ class Handler(BaseHTTPRequestHandler):
                     pos = f.tell()
                 if chunk:
                     text = chunk.decode("utf-8", errors="replace")
-                    payload = json.dumps({"text": text, "running": running, "file": str(target.resolve())}, ensure_ascii=False)
+                    label = (visible_safe or {}).get("stdout") or (visible_safe or {}).get("log_label") or "实时日志"
+                    payload = json.dumps({"text": text, "running": running, "file": label}, ensure_ascii=False)
                     self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
                     self.wfile.flush()
             else:

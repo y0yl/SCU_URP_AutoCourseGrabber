@@ -20,7 +20,7 @@
 async function login(){
   const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u.value,password:p.value})});
   const j=await r.json().catch(()=>({}));
-  if(r.ok){ location.href='/'; } else { err.textContent=j.error||'login failed'; }
+  if(r.ok){ location.href='/urpQ/'; } else { err.textContent=j.error||'login failed'; }
 }
 btn.onclick=login; p.onkeydown=e=>{if(e.key==='Enter')login()}; u.onkeydown=e=>{if(e.key==='Enter')login()};
 </script>

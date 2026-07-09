@@ -19,6 +19,7 @@ import argparse
 import json
 import random
 import re
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -33,6 +34,7 @@ from scu_login import ScuUrpClient, create_logged_in_client
 INDEX_PATH = "/student/courseSelect/courseSelect/index#iframe-xk"
 SUBMIT_PATH = "/student/courseSelect/selectCourse/checkInputCodeAndSubmit"
 WAITINGFOR_PATH = "/student/courseSelect/selectCourses/waitingfor"
+VIEW_XK_COUNT_PATH = "/student/courseSelect/selectCourse/viewXkCount"
 QUIT_PATH = "/student/courseSelect/quitCourse/index"
 FAILED_PATH = "/student/courseSelect/courseSelectFailed/index"
 
@@ -56,7 +58,9 @@ class CourseTarget:
     kxh: str = ""
     zxjxjhh: str = ""
     teacher: str = ""
+    capacity: Optional[int] = None
     rest: Optional[int] = None
+    selected_count: Optional[int] = None
     raw: dict[str, Any] | None = None
 
     @property
@@ -66,6 +70,8 @@ class CourseTarget:
             bits.append(self.teacher)
         if self.rest is not None:
             bits.append(f"余量={self.rest}")
+        if self.selected_count is not None:
+            bits.append(f"已选={self.selected_count}")
         return " | ".join(bits)
 
 
@@ -159,25 +165,27 @@ def single_or_empty(value: str) -> str:
 
 
 def split_course_id(course_id: str) -> tuple[str, str, str]:
-    parts = course_id.split("_", 2)
-    if len(parts) == 2:
+    """Parse a user course identifier.
+
+    Accepted forms:
+    - kch                 (course number only; matches exact kch)
+    - kch_kxh             (course number + class/sequence number)
+    """
+    parts = [p.strip() for p in str(course_id or "").split("_", 2)]
+    if len(parts) == 1 and parts[0]:
+        return parts[0], "", ""
+    if len(parts) == 2 and parts[0] and parts[1]:
         return parts[0], parts[1], ""
-    if len(parts) != 3:
-        raise SystemExit("--course-id 格式应为 kch_kxh 或 kch_kxh_zxjxjhh，例如 107121000_01")
-    return parts[0], parts[1], parts[2]
+    raise SystemExit("--course-id 格式应为 kch 或 kch_kxh，例如 107121000 或 107121000_01")
 
 
 def course_id_key(course_id: str) -> str:
     kch, kxh, _ = split_course_id(course_id)
-    return f"{kch}_{kxh}"
+    return f"{kch}_{kxh}" if kxh else kch
 
 
 def course_target_key(c: CourseTarget) -> str:
     return f"{c.kch}_{c.kxh}"
-
-
-def course_id_is_full(course_id: str) -> bool:
-    return len(course_id.split("_", 2)) == 3
 
 
 def args_with_course_id_filters(args: argparse.Namespace) -> argparse.Namespace:
@@ -191,14 +199,19 @@ def args_with_course_id_filters(args: argparse.Namespace) -> argparse.Namespace:
         return args
     kchs = csv_values(getattr(args, "kch", ""))
     kxhs = csv_values(getattr(args, "kxh", ""))
+    parsed: list[tuple[str, str, str]] = []
     for cid in ids:
         try:
-            kch, kxh, _ = split_course_id(cid)
+            parsed.append(split_course_id(cid))
         except SystemExit:
             continue
+    derive_kxh = bool(parsed) and all(kxh for _, kxh, _ in parsed)
+    for kch, kxh, _ in parsed:
         if kch and kch not in kchs:
             kchs.append(kch)
-        if kxh and kxh not in kxhs:
+        # If any target is course-number-only, do not add a global kxh query
+        # filter; otherwise fuzzy kch-only grabbing would miss other sections.
+        if derive_kxh and kxh and kxh not in kxhs:
             kxhs.append(kxh)
     data = dict(vars(args))
     if not getattr(args, "kch", "") and kchs:
@@ -256,6 +269,7 @@ def normalize_course(category: str, item: dict[str, Any]) -> Optional[CourseTarg
         kxh=kxh,
         zxjxjhh=zxjxjhh,
         teacher=str(item.get("skjs") or item.get("teacherName") or ""),
+        capacity=as_int_or_none(item.get("bkskrl")),
         rest=as_int_or_none(item.get("bkskyl")),
         raw=item,
     )
@@ -271,6 +285,9 @@ class CourseGrabber:
         self.tab_paths: dict[str, str] = {}
         self.page_html_cache: dict[str, str] = {}
         self.form_cache: dict[str, dict[str, str]] = {}
+        self.fuzzy_lock = threading.Lock()
+        self.fuzzy_active: set[str] = set()
+        self.fuzzy_done: set[str] = set()
 
     def log(self, msg: str) -> None:
         if self.verbose:
@@ -428,7 +445,34 @@ class CourseGrabber:
             dump_obj = raw_payloads[0] if len(raw_payloads) == 1 else raw_payloads
             Path(args.dump_json).write_text(json.dumps(dump_obj, ensure_ascii=False, indent=2), encoding="utf-8")
             self.log(f"已写入 courseList JSON: {Path(args.dump_json).resolve()}")
+        if getattr(args, "view_xk_count", False):
+            for c in courses:
+                self.enrich_selected_count(category, c)
         return courses
+
+    def enrich_selected_count(self, category: str, target: CourseTarget) -> None:
+        """Fetch the real selected-student count shown by the page's 点击查看 button."""
+        if target.selected_count is not None:
+            return
+        try:
+            path = f"{VIEW_XK_COUNT_PATH}/{target.zxjxjhh}/{target.kch}/{target.kxh}"
+            resp = self.request(
+                "POST",
+                path,
+                data="",
+                headers={
+                    "Referer": self.client.url(self.category_path(category)),
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Origin": self.client.base_origin,
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            target.selected_count = as_int_or_none(resp.json())
+            if target.selected_count is None:
+                target.selected_count = as_int_or_none(resp.text.strip())
+        except Exception as exc:
+            self.log(f"读取已选人数失败：{target.kch}_{target.kxh} {exc!r}")
 
     @staticmethod
     def match_course(c: CourseTarget, args: argparse.Namespace) -> bool:
@@ -437,22 +481,31 @@ class CourseGrabber:
         kchs = csv_values(effective_args.kch)
         kxhs = csv_values(effective_args.kxh)
         if course_ids:
-            wanted_full = set(course_ids)
-            wanted_short = {course_id_key(x) for x in course_ids}
-            if c.course_id not in wanted_full and course_target_key(c) not in wanted_short:
+            matched = False
+            for wanted in course_ids:
+                kch, kxh, zxjxjhh = split_course_id(wanted)
+                if kxh:
+                    matched = c.kch == kch and c.kxh == kxh
+                else:
+                    # Exact equality only: input "123456" must not match "1234567".
+                    matched = c.kch == kch
+                if matched:
+                    break
+            if not matched:
                 return False
         if kchs and c.kch not in kchs:
             return False
         if kxhs and c.kxh not in kxhs:
             return False
-        if args.name and args.name not in c.kcm:
+        if args.name and c.kcm.strip() != str(args.name).strip():
             return False
-        if args.teacher and args.teacher not in c.teacher:
+        if args.teacher and c.teacher.strip() != str(args.teacher).strip():
             return False
         return True
 
     def build_submit_payload(self, category: str, target: CourseTarget, args: argparse.Namespace) -> dict[str, str]:
-        self.load_category_page(category)
+        if not (getattr(args, "system_not_open", False) and self.form_cache.get(category)):
+            self.load_category_page(category)
         form = dict(self.form_cache.get(category) or {})
         form["dealType"] = form.get("dealType") or CATEGORY_INFO[category]["dealType"]
         form["kcIds"] = target.course_id
@@ -526,6 +579,82 @@ class CourseGrabber:
             data["final_status"] = "rejected"
         return data
 
+    def submit_fire_and_forget(self, category: str, target: CourseTarget, args: argparse.Namespace) -> dict[str, Any]:
+        """Start/keep a fuzzy-submit worker in the background and return immediately.
+
+        Used for kch-only/name-only fuzzy grabbing. One worker is kept per
+        concrete course section. If a section returns a "not grabbed" response
+        first, that worker immediately resubmits it.
+        """
+        if args.dry_run:
+            payload = self.build_submit_payload(category, target, args)
+            self.log("dry-run：不真实提交，仅打印 payload")
+            safe = dict(payload)
+            safe["tokenValue"] = safe.get("tokenValue", "")[:8] + "..."
+            print(json.dumps(safe, ensure_ascii=False, indent=2), flush=True)
+            return {"result": "dry-run", "final_status": "dry-run", "token": self.token}
+
+        key = target.course_id
+        with self.fuzzy_lock:
+            if key in self.fuzzy_done:
+                return {"result": "already_ok", "final_status": "skipped"}
+            if key in self.fuzzy_active:
+                return {"result": "already_active", "final_status": "queued"}
+            self.fuzzy_active.add(key)
+
+        def worker() -> None:
+            try:
+                while True:
+                    with self.fuzzy_lock:
+                        if key in self.fuzzy_done:
+                            break
+
+                    payload = self.build_submit_payload(category, target, args)
+                    try:
+                        resp = self.request(
+                            "POST",
+                            SUBMIT_PATH,
+                            data=payload,
+                            headers={
+                                "Referer": self.client.url(INDEX_PATH),
+                                "X-Requested-With": "XMLHttpRequest",
+                                "Origin": self.client.base_origin,
+                            },
+                            timeout=15,
+                        )
+                        try:
+                            data: dict[str, Any] = resp.json()
+                        except Exception:
+                            data = {"result": resp.text[:300]}
+                    except Exception as exc:
+                        data = {"result": "request_error", "message": repr(exc)}
+
+                    if data.get("token"):
+                        with self.fuzzy_lock:
+                            self.token = str(data["token"])
+
+                    result_text = str(data.get("result", ""))
+                    if result_text == "ok":
+                        with self.fuzzy_lock:
+                            self.fuzzy_done.add(key)
+                        self.log(f"后台提交返回 ok，停止重提：{target.display_name}")
+                        break
+
+                    msg = str(data.get("message") or data.get("msg") or data.get("result") or "")[:160]
+                    if getattr(args, "system_not_open", False):
+                        self.log(f"选课系统未开放模式：提交暂未进入/未成功，继续重提：{target.display_name} result={result_text[:80]} {msg}")
+                    else:
+                        self.log(f"后台提交没抢到，继续重提：{target.display_name} result={result_text[:80]} {msg}")
+                    # Do not wait: whichever section gets a failed response first
+                    # immediately loops and resubmits first.
+            finally:
+                with self.fuzzy_lock:
+                    self.fuzzy_active.discard(key)
+
+        thread = threading.Thread(target=worker, name=f"submit-{target.kch}-{target.kxh}", daemon=False)
+        thread.start()
+        return {"result": "queued", "final_status": "queued"}
+
     def confirm_submit(self, target: CourseTarget, *, attempts: int = 4) -> ConfirmResult:
         """Confirm final result: selected if course appears on quit page; failed if on failed page."""
         for i in range(1, max(1, attempts) + 1):
@@ -551,48 +680,126 @@ class CourseGrabber:
         return ConfirmResult("unknown", message="暂时无法确认最终选课状态")
 
     def grab(self, category: str, args: argparse.Namespace) -> int:
-        self.load_index()
+        if getattr(args, "system_not_open", False):
+            try:
+                self.load_index()
+            except Exception as exc:
+                self.log(f"选课系统未开放模式：进入选课页失败也继续轮询/提交，暂时无法初始化页面：{exc!r}")
+        else:
+            self.load_index()
 
-        if args.course_id and len(csv_values(args.course_id)) == 1 and course_id_is_full(args.course_id):
-            kch, kxh, zx = split_course_id(args.course_id)
-            direct = CourseTarget(category, args.course_id, args.name or args.submit_name or "", kch, kxh, zx)
-            if args.no_poll:
-                self.log(f"直接提交：{direct.display_name}")
-                result = self.submit(category, direct, args)
-                print(json.dumps(result, ensure_ascii=False, indent=2))
-                return 0 if result.get("final_status") in {"selected", "unchecked", "dry-run"} else 2
+        course_ids = csv_values(args.course_id)
+        fuzzy_all_sections = any(not split_course_id(cid)[1] for cid in course_ids)
+        if not course_ids and csv_values(args.kch) and not csv_values(args.kxh):
+            fuzzy_all_sections = True
+        if not course_ids and args.name:
+            # Match by exact course name (and optional teacher) with the same
+            # rapid retry logic as kch-only fuzzy grabbing.
+            fuzzy_all_sections = True
+        if fuzzy_all_sections:
+            self.log("提醒：该方案短时间提交次数过多，存在风控风险。推荐三个及以下精准选择课程抢课。")
 
         attempt = 0
+        previous_selected_counts: dict[str, int] = {}
+        hot_signal_keys: set[tuple[str, str]] = set()
+        cached_courses: dict[str, CourseTarget] = {}
         while True:
             attempt += 1
             try:
                 courses = self.query_courses(category, args)
+                if courses:
+                    cached_courses = {c.course_id: c for c in courses}
             except Exception as exc:
                 self.log(f"第 {attempt} 次查询失败：{exc!r}")
-                courses = []
-            available = [c for c in courses if c.rest is None or c.rest > 0]
+                if getattr(args, "system_not_open", False) and cached_courses:
+                    courses = list(cached_courses.values())
+                    self.log(f"选课系统未开放模式：使用缓存目标继续提交 {len(courses)} 门课程")
+                else:
+                    courses = []
+                    if getattr(args, "system_not_open", False):
+                        self.log("选课系统未开放模式：暂无缓存目标，继续等待能进入系统后获取课程信息")
+            if getattr(args, "system_not_open", False):
+                available = list(courses)
+            else:
+                available = [c for c in courses if c.rest is None or c.rest > 0]
+            hot_signal = False
 
             if courses:
                 summary = "; ".join(c.display_name for c in courses[:5])
                 self.log(f"第 {attempt} 次查询到 {len(courses)} 门课程，可提交 {len(available)} 门：{summary}")
+                if getattr(args, "system_not_open", False):
+                    self.log("选课系统未开放模式：不读取已选人数，并忽略余量过滤，按匹配目标继续提交")
             else:
                 self.log(f"第 {attempt} 次未匹配到课程")
 
+            for c in courses:
+                key = c.course_id
+                selected = c.selected_count
+                if selected is None:
+                    continue
+                prev = previous_selected_counts.get(key)
+                if prev is not None and selected < prev:
+                    hot_signal = True
+                    signal_key = (key, f"drop:{prev}->{selected}")
+                    if signal_key not in hot_signal_keys:
+                        hot_signal_keys.add(signal_key)
+                        self.log(
+                            f"可能抢到该课程：已选人数减少 {prev}->{selected}，"
+                            f"密切轮询 {c.display_name}"
+                        )
+                if c.capacity is not None and selected < c.capacity:
+                    hot_signal = True
+                    signal_key = (key, f"not_full:{selected}/{c.capacity}")
+                    if signal_key not in hot_signal_keys:
+                        hot_signal_keys.add(signal_key)
+                        self.log(
+                            f"可能抢到该课程：已选人数未满课特征"
+                            f"（余量={c.rest if c.rest is not None else '未知'}，已选={selected}），等待名额释放 {c.display_name}"
+                        )
+                previous_selected_counts[key] = selected
+
+            submitted_ok = False
             for target in available:
                 self.log(f"提交目标：{target.display_name}")
-                result = self.submit(category, target, args)
+                if fuzzy_all_sections:
+                    result = self.submit_fire_and_forget(category, target, args)
+                else:
+                    result = self.submit(category, target, args)
                 print(json.dumps(result, ensure_ascii=False, indent=2), flush=True)
                 status = str(result.get("final_status", ""))
+                if status == "queued":
+                    submitted_ok = True
+                    continue
+                if status == "skipped":
+                    continue
                 if status == "dry-run":
-                    return 0
+                    submitted_ok = True
+                    if not fuzzy_all_sections:
+                        return 0
+                    continue
                 if status in {"selected", "unchecked"}:
                     self.log("抢课成功" if status == "selected" else "已提交，但暂时无法确认")
-                    return 0
+                    submitted_ok = True
+                    if not fuzzy_all_sections:
+                        return 0
+                    continue
                 self.log(f"提交失败/未选中 final_status={status}, result={str(result.get('result', ''))[:120]}")
+            if submitted_ok and fuzzy_all_sections:
+                self.log("本轮已快速提交所有匹配到的目标课程，继续轮询")
 
-            if args.once or (args.max_attempts and attempt >= args.max_attempts):
-                return 2
-            time.sleep(max(0.2, args.interval + random.uniform(0, args.jitter)))
+            if args.no_poll or args.once or (args.max_attempts and attempt >= args.max_attempts):
+                return 0 if submitted_ok else 2
+            sleep_interval = args.interval
+            sleep_jitter = args.jitter
+            if hot_signal:
+                sleep_interval = max(1.2, args.interval * 0.65)
+                sleep_jitter = max(0.6, args.jitter * 0.60)
+                self.log(
+                    f"检测到可能放课信号，临时加密轮询："
+                    f"interval {args.interval:.2f}->{sleep_interval:.2f}s, "
+                    f"jitter {args.jitter:.2f}->{sleep_jitter:.2f}s"
+                )
+            time.sleep(max(0.8, sleep_interval + random.uniform(0, sleep_jitter)))
 
 
 def create_client_with_retry(args: argparse.Namespace) -> ScuUrpClient:
@@ -629,11 +836,11 @@ def print_courses(courses: list[CourseTarget], *, limit: int) -> None:
 def add_common_sub_args(sp: argparse.ArgumentParser) -> None:
     sp.add_argument("--category", choices=sorted(CATEGORY_INFO), default="plan")
     sp.add_argument("--fajhh", default="")
-    sp.add_argument("--course-id", default="", help="课程 ID，可用 kch_kxh，多个用逗号分隔，也可使用完整 kch_kxh_zxjxjhh")
+    sp.add_argument("--course-id", default="", help="目标课程，可用 kch（抢该课程号全部课序）或 kch_kxh（精准课序）；多个用逗号分隔")
     sp.add_argument("--kch", default="", help="课程号，多个用逗号分隔")
     sp.add_argument("--kxh", default="", help="课序号，多个用逗号分隔")
-    sp.add_argument("--name", default="", help="课程名称")
-    sp.add_argument("--teacher", default="", help="教师姓名")
+    sp.add_argument("--name", default="", help="课程名称；用于抢课匹配时要求与系统课程名严格相同")
+    sp.add_argument("--teacher", default="", help="教师姓名；与 --name 合用时按课程名严格相同 + 教师名匹配")
     sp.add_argument("--search", default="", help="按名称/教师模糊搜索")
     sp.add_argument("--kkxsh", default="", help="开课院系号")
     sp.add_argument("--kclbdm", default="")
@@ -646,6 +853,7 @@ def add_common_sub_args(sp: argparse.ArgumentParser) -> None:
     sp.add_argument("--vt", default="")
     sp.add_argument("--fj", default="0")
     sp.add_argument("--dump-json", default="")
+    sp.add_argument("--view-xk-count", action="store_true", help="调用“点击查看”接口读取真实已选人数并显示到列表/日志")
     sp.add_argument("--limit", type=int, default=50)
     sp.add_argument("--dry-run", action="store_true")
     sp.add_argument("--submit-name", default="", help="提交时覆盖 kcms，通常为 课程名_教师名")
@@ -669,11 +877,12 @@ def build_parser() -> argparse.ArgumentParser:
     for name in ["list", "grab", "submit"]:
         add_common_sub_args(sub.add_parser(name))
 
-    sub.choices["grab"].add_argument("--interval", type=float, default=1.2)
-    sub.choices["grab"].add_argument("--jitter", type=float, default=0.3)
+    sub.choices["grab"].add_argument("--interval", type=float, default=2.0, help="基础轮询间隔秒；推荐 2.0")
+    sub.choices["grab"].add_argument("--jitter", type=float, default=1.3, help="随机抖动秒；推荐 1.3")
     sub.choices["grab"].add_argument("--max-attempts", type=int, default=0, help="0 表示一直轮询")
     sub.choices["grab"].add_argument("--once", action="store_true")
-    sub.choices["grab"].add_argument("--no-poll", action="store_true", help="不轮询，直接按 --course-id 提交")
+    sub.choices["grab"].add_argument("--no-poll", action="store_true", help="不轮询，查询到目标后提交一轮")
+    sub.choices["grab"].add_argument("--system-not-open", action="store_true", help="选课系统未开放/不稳定时使用已缓存目标继续提交；不读取已选人数以降低延迟")
     return p
 
 
@@ -693,20 +902,17 @@ def main(argv: Optional[list[str]] = None) -> int:
             raise SystemExit("submit 需要 --course-id")
         if len(csv_values(args.course_id)) != 1:
             raise SystemExit("submit 只支持单个 --course-id；多个目标请使用 grab")
-        if course_id_is_full(args.course_id):
-            kch, kxh, zx = split_course_id(args.course_id)
-            target = CourseTarget(args.category, args.course_id, args.name or args.submit_name, kch, kxh, zx)
-        else:
-            matches = grabber.query_courses(args.category, args)
-            if not matches:
-                raise SystemExit(f"未找到 course-id 对应课程：{args.course_id}")
-            target = matches[0]
+        matches = grabber.query_courses(args.category, args)
+        if not matches:
+            raise SystemExit(f"未找到 course-id 对应课程：{args.course_id}")
+        target = matches[0]
         print(json.dumps(grabber.submit(args.category, target, args), ensure_ascii=False, indent=2))
         return 0
 
     if args.command == "grab":
         if not (args.course_id or args.kch or args.name):
             raise SystemExit("grab 至少需要 --course-id、--kch 或 --name 之一")
+        args.view_xk_count = not getattr(args, "system_not_open", False)
         return grabber.grab(args.category, args)
 
     return 1
@@ -714,4 +920,3 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

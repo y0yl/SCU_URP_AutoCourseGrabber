@@ -14,7 +14,7 @@
 </head>
 <body>
 <header>
-  <div><h1>四川大学SCU_URP自动化抢课</h1><div class="sub">修改配置 · 启动/停止任务 · 实时查看日志</div></div>
+  <div><h1>四川大学SCU_URP自动化抢课</h1><div class="sub">填写学号 + 课程号/课程名 | 启动/停止任务 | 查看自己的实时日志</div></div>
   <div class="pill"><span id="dot" class="dot"></span><span id="statusText">检查中</span></div>
 </header>
 <main>
@@ -22,23 +22,17 @@
     <h2>运行配置 <span class="small" id="savedAt"></span></h2>
     <div class="body">
       <div class="grid">
-        <div class="field"><label>网页访问账号</label><input id="web_username" placeholder="admin" /></div>
-        <div class="field"><label>网页访问密码</label><input id="web_password" type="password" placeholder="留空则空密码" /></div>
-        <div class="field"><label>教务账号 username</label><input id="urp_username" autocomplete="username" /></div>
+        <div class="field"><label>学号</label><input id="urp_username" autocomplete="username" /></div>
         <div class="field"><label>教务密码 password</label><input id="urp_password" type="password" autocomplete="current-password" /></div>
-        <div class="field full"><label class="check"><input id="require_auth" type="checkbox" /> 开启网页访问鉴权：外网访问时需输入上面的网页账号/密码才能看配置和实时日志</label></div>
-        <div class="field"><label>模式</label><select id="mode"><option value="grab">grab 轮询抢课</option><option value="list">list 查询课程</option></select></div>
-        <div class="field"><label>类别</label><select id="category"><option value="free">free 自由选课</option><option value="intent">intent 推荐/计划</option><option value="plan">plan 方案</option><option value="school">school 校任</option><option value="depart">depart 系任</option></select></div>
-        <div class="field full"><label>course-id（支持 kch_kxh，多个用逗号分隔）</label><input id="course_id" placeholder="888006010A07_01" /></div>
-        <div class="field"><label>课程号 kch</label><input id="kch" /></div>
-        <div class="field"><label>课序号 kxh</label><input id="kxh" placeholder="01,14" /></div>
-        <div class="field"><label>课程名</label><input id="name" /></div>
-        <div class="field"><label>教师</label><input id="teacher" /></div>
-        <div class="field full"><label>搜索关键词</label><input id="search" /></div>
+        <div class="field"><label>模式</label><select id="mode"><option value="grab">grab 抢课</option><option value="list">list 查询课程</option></select></div>
+        <div class="field"><label>匹配模式</label><select id="match_mode"><option value="course">按课程号（可选课序号）</option><option value="name">按课程名（可选教师）</option></select><input id="category" type="hidden" value="free" /></div>
+        <div class="field full"><label>目标课程号（可选；可填 课程号 或 课程号_课序号；多个用英文逗号分隔）</label><input id="course_id" placeholder="例如 888006010A07 或 888006010A07_01" /></div>
+        <div class="field"><label>课程名（可选；严格相同）</label><input id="name" placeholder="例如 大学英语" /></div>
+        <div class="field"><label>教师名（可选；与课程名合用）</label><input id="teacher" placeholder="例如 张三" /></div>
         <div class="field"><label>查询条数 limit</label><input id="limit" type="number" min="0" /></div>
         <div class="field"><label>最大轮数 max_attempts（0 不限制）</label><input id="max_attempts" type="number" min="0" /></div>
-        <div class="field"><label>间隔 interval 秒</label><input id="interval" type="number" step="0.05" min="0" /></div>
-        <div class="field"><label>随机抖动 jitter 秒</label><input id="jitter" type="number" step="0.05" min="0" /></div>
+        <div class="field"><label>基础间隔 interval 秒（推荐 2）</label><input id="interval" type="number" step="0.05" min="0" /></div>
+        <div class="field"><label>随机抖动 jitter 秒（推荐 1.3）</label><input id="jitter" type="number" step="0.05" min="0" /></div>
         <div class="field"><label>确认次数 confirm_attempts</label><input id="confirm_attempts" type="number" min="0" /></div>
         <div class="field"><label>额外参数</label><input id="extra_args" placeholder="例如 --kkxsh XXX" /></div>
       </div>
@@ -47,15 +41,17 @@
         <label class="check"><input id="dry_run" type="checkbox" /> dry-run 不真实提交</label>
         <label class="check"><input id="once" type="checkbox" /> 只执行一次</label>
         <label class="check"><input id="no_confirm" type="checkbox" /> 不做最终确认</label>
+        <label class="check"><input id="system_not_open" type="checkbox" /> 选课系统未开放</label>
       </div>
+      <p class="small" id="systemNotOpenNote">“选课系统未开放”用于系统入口暂时进不去或不稳定时：不查询已选人数以降低延迟，若已有缓存目标则继续按目标提交。</p>
       <div class="btns">
-        <button id="saveBtn" class="secondary">保存配置</button>
+        <button id="saveBtn" class="secondary">保存当前参数</button>
         <button id="startBtn" class="ok">启动</button>
         <button id="stopBtn" class="danger">停止</button>
         <button id="refreshBtn" class="secondary">刷新日志</button>
       </div>
       <div id="cmd" class="cmd"></div>
-      <p class="small">提示：真实抢课前可先勾选 dry-run 验证查询条件；日志出现 <code>final_status: selected</code> 才表示最终确认选上。</p>
+      <p class="small">提示：list 模式只显示查询相关选项；grab 模式才显示轮询/提交相关选项。日志出现 <code>final_status: selected</code> 才表示最终确认选上。</p>
     </div>
   </section>
   <section class="card">
@@ -80,29 +76,49 @@
 <div id="selectedPopup" class="selected-popup"><h3>已抢到课程 <button id="selectedClose" class="close">关闭</button></h3><div id="selectedList"></div></div>
 <div id="toast" class="toast"></div>
 <script>
-const ids = ['web_username','web_password','require_auth','urp_username','urp_password','mode','category','course_id','kch','kxh','name','teacher','search','limit','interval','jitter','max_attempts','confirm_attempts','quiet_login','dry_run','once','no_confirm','extra_args'];
+const ids = ['urp_username','urp_password','mode','category','match_mode','course_id','name','teacher','limit','interval','jitter','max_attempts','confirm_attempts','quiet_login','dry_run','once','no_confirm','system_not_open','extra_args'];
 const $ = id => document.getElementById(id);
 let es = null, currentLog = localStorage.getItem('urpq_current_log') || '';
+let runToken = localStorage.getItem('urpq_run_token') || '';
+let currentRunKey = localStorage.getItem('urpq_current_run_key') || 'initial';
+let statsByRun = {};
+let shownSelectedKeys = new Set();
+try{ statsByRun = JSON.parse(localStorage.getItem('urpq_stats_by_run') || '{}') || {}; }catch(e){ statsByRun = {}; }
+function tokenQS(){ return runToken ? (runToken.includes('?') ? '' : 'run_token='+encodeURIComponent(runToken)) : ''; }
+function withToken(url){ if(!runToken) return url; return url + (url.includes('?')?'&':'?') + 'run_token=' + encodeURIComponent(runToken); }
 function toast(msg){ const t=$('toast'); t.textContent=msg; t.style.display='block'; setTimeout(()=>t.style.display='none',2600); }
-function handleSelectedAlerts(alerts){ if(!alerts||!alerts.length) return; const list=$('selectedList'); list.innerHTML=''; alerts.forEach(a=>{ const div=document.createElement('div'); div.className='selected-item'; const b=document.createElement('b'); b.textContent=a.course||'未知课程'; const pre=document.createElement('pre'); pre.textContent=a.message||''; div.appendChild(b); div.appendChild(pre); list.appendChild(div); }); $('selectedPopup').style.display='block'; document.title='已抢到课程 - 四川大学SCU_URP自动化抢课'; try{ localStorage.setItem('urpq_selected_alerts', JSON.stringify(alerts)); }catch(e){} }
-function restoreSelectedAlerts(){ try{ const a=JSON.parse(localStorage.getItem('urpq_selected_alerts')||'[]'); if(a.length) handleSelectedAlerts(a); }catch(e){} }
-function getCfg(){ const c={}; ids.forEach(id=>{ const el=$(id); c[id] = el.type==='checkbox' ? el.checked : el.value; }); return c; }
-function setCfg(c){ ids.forEach(id=>{ if(!(id in c)) return; const el=$(id); if(el.type==='checkbox') el.checked=!!c[id]; else el.value=c[id] ?? ''; }); renderCmd(); }
-function renderCmd(){ const c=getCfg(); let a=['python','course_grabber.py']; if(c.urp_username)a.push('--username',c.urp_username); if(c.urp_password)a.push('--password','******'); if(c.quiet_login)a.push('--quiet-login'); a.push(c.mode,'--category',c.category); [['course_id','--course-id'],['kch','--kch'],['kxh','--kxh'],['name','--name'],['teacher','--teacher'],['search','--search']].forEach(([k,f])=>{if(c[k])a.push(f, c[k])}); if(c.limit>0)a.push('--limit',c.limit); if(c.dry_run)a.push('--dry-run'); if(c.no_confirm)a.push('--no-confirm'); if(c.mode==='grab'){a.push('--interval',c.interval,'--jitter',c.jitter); if(c.max_attempts>0)a.push('--max-attempts',c.max_attempts); if(c.confirm_attempts>0)a.push('--confirm-attempts',c.confirm_attempts); if(c.once)a.push('--once');} if(c.extra_args)a.push(c.extra_args); $('cmd').textContent=a.join(' '); }
-ids.forEach(id=>$(id).addEventListener('input',renderCmd));
+function alertKey(a){ return (a.course||'未知课程')+'|'+String(a.message||'').slice(-300); }
+function handleSelectedAlerts(alerts, force=false){ if(!alerts||!alerts.length) return; const fresh=alerts.filter(a=>force || !shownSelectedKeys.has(alertKey(a))); if(!fresh.length) return; fresh.forEach(a=>shownSelectedKeys.add(alertKey(a))); const list=$('selectedList'); list.innerHTML=''; fresh.forEach(a=>{ const div=document.createElement('div'); div.className='selected-item'; const b=document.createElement('b'); b.textContent=a.course||'未知课程'; const pre=document.createElement('pre'); pre.textContent=a.message||''; div.appendChild(b); div.appendChild(pre); list.appendChild(div); }); $('selectedPopup').style.display='block'; document.title='已抢到课程 - 四川大学SCU_URP自动化抢课'; try{ localStorage.setItem('urpq_selected_alerts', JSON.stringify(alerts)); }catch(e){} }
+function restoreSelectedAlerts(){ try{ const a=JSON.parse(localStorage.getItem('urpq_selected_alerts')||'[]'); if(a.length) handleSelectedAlerts(a, true); }catch(e){} }
+function getCfg(){ const c={}; ids.forEach(id=>{ const el=$(id); if(!el)return; c[id] = el.type==='checkbox' ? el.checked : el.value; }); c.category='free'; return c; }
+function setCfg(c){ ids.forEach(id=>{ if(!(id in c)) return; const el=$(id); if(!el)return; if(el.type==='checkbox') el.checked=!!c[id]; else el.value=c[id] ?? ''; }); updateVisibleOptions(); renderCmd(); }
+function renderCmd(){ const c=getCfg(); let a=['python','course_grabber.py']; if(c.urp_username)a.push('--username',c.urp_username); if(c.urp_password)a.push('--password','******'); if(c.quiet_login)a.push('--quiet-login'); a.push(c.mode,'--category','free'); const fields=c.match_mode==='name' ? [['name','--name'],['teacher','--teacher']] : [['course_id','--course-id']]; fields.forEach(([k,f])=>{if(c[k])a.push(f, c[k])}); if(c.mode==='list'){ if(c.limit>0)a.push('--limit',c.limit); } else if(c.mode==='grab'){ if(c.dry_run)a.push('--dry-run'); if(c.no_confirm)a.push('--no-confirm'); if(c.system_not_open)a.push('--system-not-open'); a.push('--interval',c.interval,'--jitter',c.jitter); if(c.max_attempts>0)a.push('--max-attempts',c.max_attempts); if(c.confirm_attempts>0)a.push('--confirm-attempts',c.confirm_attempts); if(c.once)a.push('--once'); } if(c.extra_args)a.push(c.extra_args); $('cmd').textContent=a.join(' '); }
+function fieldBox(id){ const el=$(id); return el ? el.closest('.field') || el.closest('.check') : null; }
+function setShown(id, show){ const box=fieldBox(id); if(box) box.style.display = show ? '' : 'none'; }
+function updateVisibleOptions(){ const m=$('match_mode') ? $('match_mode').value : 'course'; const run=$('mode') ? $('mode').value : 'grab'; setShown('course_id', m==='course'); ['name','teacher'].forEach(id=>setShown(id, m==='name')); setShown('limit', run==='list'); ['interval','jitter','max_attempts','confirm_attempts','dry_run','once','no_confirm','system_not_open'].forEach(id=>setShown(id, run==='grab')); const note=$('systemNotOpenNote'); if(note) note.style.display = run==='grab' ? '' : 'none'; }
+ids.forEach(id=>{const el=$(id); if(el) el.addEventListener('input',()=>{updateVisibleOptions(); renderCmd();});});
 async function api(url,opt){ const r=await fetch(url,{headers:{'Content-Type':'application/json'},...opt}); const j=await r.json(); if(!r.ok) throw new Error(j.error||r.statusText); return j; }
 async function loadConfig(){ setCfg(await api('/api/config')); }
 async function saveConfig(){ const j=await api('/api/config',{method:'POST',body:JSON.stringify(getCfg())}); setCfg(j.config); $('savedAt').textContent='已保存 '+new Date().toLocaleTimeString(); toast('配置已保存'); }
-async function start(){ const j=await api('/api/start',{method:'POST',body:JSON.stringify(getCfg())}); toast('已启动 PID '+j.run.pid); await refreshLogs(); connectStream(); await status(); }
-async function stop(){ const j=await api('/api/stop',{method:'POST',body:'{}'}); toast(j.message||'已停止'); await status(); }
+async function start(){ const cfg=getCfg(); if(cfg.match_mode==='course'){ if(!String(cfg.course_id||'').trim()){ toast('请填写目标课程号'); return; } cfg.name=''; cfg.teacher=''; } else { if(!String(cfg.name||'').trim()){ toast('请填写课程名'); return; } cfg.course_id=''; } ['kch','kxh','search'].forEach(k=>cfg[k]=''); shownSelectedKeys.clear(); try{localStorage.removeItem('urpq_selected_alerts');}catch(e){} const j=await api('/api/start',{method:'POST',body:JSON.stringify(cfg)}); if(j.run_token){ runToken=j.run_token; localStorage.setItem('urpq_run_token', runToken); } currentRunKey=runKeyFromRun(j.run); if(!statsByRun[currentRunKey]) statsByRun[currentRunKey]={attempts:0,submit:0,selected:0,failed:0,bad_gateway:0}; persistStats(); renderAccumStats(); toast('已启动 PID '+j.run.pid); await refreshLogs(); connectStream(); await status(true); }
+async function stop(){ const j=await api(withToken('/api/stop'),{method:'POST',body:'{}'}); toast(j.message||'已停止'); await status(true); }
 function appendLog(text){ if(!text) return; const term=$('terminal'); const atBottom = term.scrollTop + term.clientHeight >= term.scrollHeight - 30; const span=document.createElement('span'); span.textContent=text; term.appendChild(span); if(atBottom) term.scrollTop=term.scrollHeight; }
-function connectStream(file=''){ if(es) es.close(); const url='/api/stream'+(file?'?file='+encodeURIComponent(file):''); es=new EventSource(url); es.onmessage=e=>{ const d=JSON.parse(e.data); if(d.file) currentLog=d.file; appendLog(d.text); if(d.text && d.text.includes('\"final_status\": \"selected\"')) status(false); else status(false); }; es.onerror=()=>{}; }
-async function status(updateLog=true){ const j=await api('/api/status'); $('dot').className='dot '+(j.running?'on':'off'); $('statusText').textContent=j.running?'运行中':'未运行'; $('startBtn').disabled=j.running; $('stopBtn').disabled=!j.running; if(j.run){ $('runInfo').textContent=`PID ${j.run.pid||'-'} · ${j.run.started_at||''} · ${j.run.stdout||''}`; currentLog=j.run.stdout || currentLog; if(currentLog) localStorage.setItem('urpq_current_log', currentLog); } handleSelectedAlerts(j.selected_alerts); const s=j.stats||{}; $('sAttempts').textContent=s.attempts||0; $('sSubmit').textContent=s.submit||0; $('sSelected').textContent=s.selected||0; $('sFailed').textContent=s.failed||0; $('sBad').textContent=s.bad_gateway||0; }
-async function refreshLogs(){ const j=await api('/api/logs'); const sel=$('logSelect'); sel.innerHTML=''; const all=[...(j.runs||[]).map(r=>r.stdout), ...(j.files||[])].filter(Boolean); [...new Set(all)].forEach(f=>{const o=document.createElement('option'); o.value=f; o.textContent=f; sel.appendChild(o);}); const saved=localStorage.getItem('urpq_current_log'); if(saved && [...sel.options].some(o=>o.value===saved)) sel.value=saved; else if(currentLog && [...sel.options].some(o=>o.value===currentLog)) sel.value=currentLog; }
-async function loadTail(){ const f=$('logSelect').value || currentLog; if(f) localStorage.setItem('urpq_current_log', f); const j=await api('/api/tail?lines=500&file='+encodeURIComponent(f)); $('terminal').textContent=j.text||''; handleSelectedAlerts(j.selected_alerts); const s=j.stats||{}; $('sAttempts').textContent=s.attempts||0; $('sSubmit').textContent=s.submit||0; $('sSelected').textContent=s.selected||0; $('sFailed').textContent=s.failed||0; $('sBad').textContent=s.bad_gateway||0; connectStream(f); }
+function connectStream(file=''){ if(es) es.close(); let url='/api/stream'+(file?'?file='+encodeURIComponent(file):''); url=withToken(url); es=new EventSource(url); es.onmessage=e=>{ const d=JSON.parse(e.data); if(d.file) currentLog=d.file; appendLog(d.text); if(d.text) status(true); else status(false); }; es.onerror=()=>{}; }
+function runKeyFromRun(run){ return run ? `${run.started_at||''}|${run.pid||''}|${run.student_id||''}` : (currentRunKey || 'initial'); }
+function persistStats(){ try{ localStorage.setItem('urpq_stats_by_run', JSON.stringify(statsByRun)); localStorage.setItem('urpq_current_run_key', currentRunKey); }catch(e){} }
+function renderAccumStats(){ const total={attempts:0,submit:0,selected:0,failed:0,bad_gateway:0}; Object.values(statsByRun).forEach(s=>{ if(!s)return; total.attempts+=Number(s.attempts||0); total.submit+=Number(s.submit||0); total.selected+=Number(s.selected||0); total.failed+=Number(s.failed||0); total.bad_gateway+=Number(s.bad_gateway||0); }); $('sAttempts').textContent=total.attempts; $('sSubmit').textContent=total.submit; $('sSelected').textContent=total.selected; $('sFailed').textContent=total.failed; $('sBad').textContent=total.bad_gateway; }
+function updateStats(s,key=currentRunKey){ if(!s)return; key=key||currentRunKey||'initial'; statsByRun[key]={attempts:Number(s.attempts||0),submit:Number(s.submit||0),selected:Number(s.selected||0),failed:Number(s.failed||0),bad_gateway:Number(s.bad_gateway||0)}; persistStats(); renderAccumStats(); }
+async function status(updateStatsFromStatus=false){ const j=await api(withToken('/api/status')); $('dot').className='dot '+(j.running?'on':'off'); $('statusText').textContent=j.running?'运行中':'未运行'; $('startBtn').disabled=j.running; $('stopBtn').disabled=!j.running; if(j.run){ currentRunKey=runKeyFromRun(j.run); persistStats(); $('runInfo').textContent=`学号 ${j.run.student_id||'-'} | PID ${j.run.pid||'-'} | ${j.run.started_at||''}`; currentLog=j.run.stdout || currentLog; if(currentLog) localStorage.setItem('urpq_current_log', currentLog); } handleSelectedAlerts(j.selected_alerts); if(updateStatsFromStatus) updateStats(j.stats,currentRunKey); else renderAccumStats(); }
+async function refreshLogs(){ const j=await api(withToken('/api/logs')); const sel=$('logSelect'); sel.innerHTML=''; const all=[...(j.runs||[]).map(r=>r.stdout), ...(j.files||[])].filter(Boolean); [...new Set(all)].forEach(f=>{const o=document.createElement('option'); o.value=f; o.textContent=f; sel.appendChild(o);}); const saved=localStorage.getItem('urpq_current_log'); if(saved && [...sel.options].some(o=>o.value===saved)) sel.value=saved; else if(currentLog && [...sel.options].some(o=>o.value===currentLog)) sel.value=currentLog; }
+async function loadTail(){ const f=$('logSelect').value || currentLog; if(f) localStorage.setItem('urpq_current_log', f); const j=await api(withToken('/api/tail?lines=500&file='+encodeURIComponent(f))); $('terminal').textContent=j.text||''; handleSelectedAlerts(j.selected_alerts); updateStats(j.stats,currentRunKey); connectStream(f); }
 $('selectedClose').onclick=()=>{ $('selectedPopup').style.display='none'; document.title='四川大学SCU_URP自动化抢课'; };
-$('saveBtn').onclick=()=>saveConfig().catch(e=>toast(e.message)); $('startBtn').onclick=()=>start().catch(e=>toast(e.message)); $('stopBtn').onclick=()=>stop().catch(e=>toast(e.message)); $('refreshBtn').onclick=()=>{refreshLogs();status();}; $('loadLogBtn').onclick=()=>loadTail().catch(e=>toast(e.message)); $('clearViewBtn').onclick=()=>{$('terminal').textContent=''};
-(async()=>{ restoreSelectedAlerts(); await loadConfig(); await refreshLogs(); await status(); connectStream(); setInterval(()=>status(false),3000); })().catch(e=>toast(e.message));
+$('saveBtn').onclick=()=>saveConfig().catch(e=>toast(e.message)); $('startBtn').onclick=()=>start().catch(e=>toast(e.message)); $('stopBtn').onclick=()=>stop().catch(e=>toast(e.message)); $('refreshBtn').onclick=()=>{refreshLogs();status(false);}; $('loadLogBtn').onclick=()=>loadTail().catch(e=>toast(e.message)); $('clearViewBtn').onclick=()=>{$('terminal').textContent=''};
+(async()=>{ renderAccumStats(); restoreSelectedAlerts(); await loadConfig(); await refreshLogs(); await status(true); connectStream(); setInterval(()=>status(false),3000); })().catch(e=>toast(e.message));
 </script>
 </body>
 </html>
+
+
+
+
+
