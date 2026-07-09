@@ -1,11 +1,9 @@
-﻿# Python
 __pycache__/
 *.py[cod]
 *.pyo
 .venv/
 venv/
 
-# Local runtime data
 logs/
 *.log
 *.err.log
@@ -13,13 +11,11 @@ webui/runs.json
 webui/config.json
 scu_urp_cookies.json
 
-# Build/package outputs
 dist/
 build/
 *.zip
 *.tar.gz
 
-# OS/editor
 .DS_Store
 Thumbs.db
 .vscode/

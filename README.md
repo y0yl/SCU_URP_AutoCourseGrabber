@@ -21,18 +21,17 @@
 
 ```text
 .
-├── course_grabber.py      # 课程查询、轮询和提交主脚本
-├── scu_login.py           # 四川大学 URP 登录客户端
-├── webui_server.py        # 本地 WebUI HTTP 服务
+├── course_grabber.py
+├── scu_login.py
+├── webui_server.py
 ├── webui/
-│   ├── index.html         # WebUI 主界面
-│   ├── login.html         # WebUI 登录页
-│   ├── config.json        # 本地配置文件，运行时生成/更新
-│   └── runs.json          # 历史任务记录，运行时生成/更新
-├── logs/                  # 运行日志目录，运行时生成
-├── requirements.txt       # Python 依赖
-├── WEBUI_README.md        # WebUI 使用说明
-└── PROJECT_HANDOFF.md     # 项目交接与更多命令说明
+│   ├── index.html
+│   ├── login.html
+│   ├── config.json
+│   └── runs.json
+├── logs/
+├── requirements.txt
+├── WEBUI_README.md
 ```
 
 ## 环境要求
@@ -202,4 +201,3 @@ python .\course_grabber.py grab --category free --course-id 888006010A07 --inter
 ## 更多说明
 
 - [`WEBUI_README.md`](WEBUI_README.md)：可视化网页使用说明
-- [`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md)：完整项目交接、实现细节与更多命令

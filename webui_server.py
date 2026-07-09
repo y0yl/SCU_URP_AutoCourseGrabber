@@ -1,12 +1,3 @@
-﻿#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""Local visual Web UI for course_grabber.py.
-
-Run:
-    python webui_server.py
-Then open:
-    http://127.0.0.1:8765
-"""
 from __future__ import annotations
 
 import argparse
@@ -73,7 +64,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
 CURRENT: dict[str, Any] = {"process": None, "run": None, "lock": threading.Lock()}
 SESSIONS: set[str] = set()
 
-
 def ensure_dirs() -> None:
     WEB_DIR.mkdir(exist_ok=True)
     LOG_DIR.mkdir(exist_ok=True)
@@ -82,19 +72,16 @@ def ensure_dirs() -> None:
     if not RUNS_PATH.exists():
         write_json(RUNS_PATH, [])
 
-
 def read_json(path: Path, default: Any) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return default
 
-
 def write_json(path: Path, data: Any) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(path)
-
 
 def norm_config(data: dict[str, Any]) -> dict[str, Any]:
     cfg = dict(DEFAULT_CONFIG)
@@ -115,7 +102,7 @@ def norm_config(data: dict[str, Any]) -> dict[str, Any]:
             cfg[k] = DEFAULT_CONFIG[k]
     if cfg["mode"] not in {"list", "grab"}:
         cfg["mode"] = "grab"
-    # ?????????????? category ??????? CLI?
+
     cfg["category"] = "free"
     if cfg.get("match_mode") not in {"course", "name"}:
         cfg["match_mode"] = "course"
@@ -128,20 +115,18 @@ def norm_config(data: dict[str, Any]) -> dict[str, Any]:
         cfg["kxh"] = ""
     return cfg
 
-
 def split_extra_args(s: str) -> list[str]:
-    # Lightweight split for simple flags/values. Quote-heavy cases can be put in normal fields.
+
     import shlex
     try:
         return shlex.split(s or "", posix=False)
     except Exception:
         return []
 
-
 def build_args(cfg: dict[str, Any]) -> list[str]:
     args = [sys.executable, str(COURSE_GRABBER)]
-    # Credentials are passed through child environment, not command line,
-    # so process lists and runs.json do not expose the password.
+
+
     if cfg.get("quiet_login"):
         args.append("--quiet-login")
     args += [cfg["mode"], "--category", str(cfg["category"])]
@@ -173,16 +158,13 @@ def build_args(cfg: dict[str, Any]) -> list[str]:
     args += split_extra_args(str(cfg.get("extra_args") or ""))
     return args
 
-
 def process_alive(proc: subprocess.Popen | None) -> bool:
     return proc is not None and proc.poll() is None
-
 
 def add_run(run: dict[str, Any]) -> None:
     runs = read_json(RUNS_PATH, [])
     runs.insert(0, run)
     write_json(RUNS_PATH, runs[:200])
-
 
 def update_run_record(run: dict[str, Any]) -> None:
     runs = read_json(RUNS_PATH, [])
@@ -197,7 +179,6 @@ def update_run_record(run: dict[str, Any]) -> None:
         runs.insert(0, run)
     write_json(RUNS_PATH, runs[:200])
 
-
 def latest_run() -> dict[str, Any] | None:
     runs = read_json(RUNS_PATH, [])
     if runs:
@@ -206,7 +187,6 @@ def latest_run() -> dict[str, Any] | None:
     if files:
         return {"status": "log-only", "stdout": str(files[0].resolve()), "started_at": datetime.fromtimestamp(files[0].stat().st_mtime).isoformat(timespec="seconds")}
     return None
-
 
 def update_current_run_status() -> None:
     with CURRENT["lock"]:
@@ -220,15 +200,13 @@ def update_current_run_status() -> None:
             CURRENT["run"] = run
             update_run_record(run)
 
-
 def tail_file(path: Path, lines: int = 200) -> str:
     if not path.exists():
         return ""
-    # Efficient enough for normal logs; cap bytes to avoid huge responses.
+
     data = path.read_bytes()[-512_000:]
     text = data.decode("utf-8", errors="replace")
     return "\n".join(text.splitlines()[-lines:])
-
 
 def stats_from_text(text: str) -> dict[str, int]:
     return {
@@ -239,9 +217,7 @@ def stats_from_text(text: str) -> dict[str, int]:
         "bad_gateway": text.count("502") + text.count("503") + text.count("504"),
     }
 
-
 def selected_alerts_from_text(text: str) -> list[dict[str, str]]:
-    """Extract compact selected-course alerts from log text."""
     lines = text.splitlines()
     alerts: list[dict[str, str]] = []
     seen: set[str] = set()
@@ -263,7 +239,6 @@ def selected_alerts_from_text(text: str) -> list[dict[str, str]]:
         alerts.append({"course": course or "未知课程", "message": snippet})
     return alerts[-20:]
 
-
 def redact_run(run: dict[str, Any]) -> dict[str, Any]:
     safe = json.loads(json.dumps(run, ensure_ascii=False))
     cfg = safe.get("config")
@@ -278,9 +253,7 @@ def redact_run(run: dict[str, Any]) -> dict[str, Any]:
                 args[i + 1] = "******"
     return safe
 
-
 def public_config(cfg: dict[str, Any], *, admin: bool = False) -> dict[str, Any]:
-    """Return config for browser without exposing web-admin fields."""
     out = dict(cfg)
     for k in ["web_username", "web_password", "require_auth"]:
         out.pop(k, None)
@@ -289,7 +262,6 @@ def public_config(cfg: dict[str, Any], *, admin: bool = False) -> dict[str, Any]
         out["urp_password"] = ""
     return out
 
-
 def parse_cookies(header: str) -> dict[str, str]:
     out: dict[str, str] = {}
     for part in (header or "").split(";"):
@@ -297,7 +269,6 @@ def parse_cookies(header: str) -> dict[str, str]:
             k, v = part.strip().split("=", 1)
             out[k] = v
     return out
-
 
 def find_run_by_token(token: str) -> dict[str, Any] | None:
     if not token:
@@ -310,7 +281,6 @@ def find_run_by_token(token: str) -> dict[str, Any] | None:
         if isinstance(item, dict) and item.get("run_token") == token:
             return item
     return None
-
 
 def run_owns_file(run: dict[str, Any] | None, target: Path) -> bool:
     if not run:
@@ -328,7 +298,6 @@ def run_owns_file(run: dict[str, Any] | None, target: Path) -> bool:
             except Exception:
                 pass
     return False
-
 
 def owner_visible_run(run: dict[str, Any] | None) -> dict[str, Any] | None:
     if not run:
@@ -354,13 +323,11 @@ def owner_visible_run(run: dict[str, Any] | None) -> dict[str, Any] | None:
         safe["stderr"] = f"学号 {student} 的错误日志"
     return safe
 
-
 class Handler(BaseHTTPRequestHandler):
     server_version = "SCU_URP_AutoCourse/1.0"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         print("[%s] %s" % (datetime.now().strftime("%H:%M:%S"), fmt % args))
-
 
     def is_authed(self) -> bool:
         return self.is_admin()
@@ -452,7 +419,7 @@ class Handler(BaseHTTPRequestHandler):
             if not target:
                 return self.send_json({"text": "", "stats": {}})
             target = target.resolve()
-            # Only serve project logs to avoid arbitrary file read from browser.
+
             if LOG_DIR.resolve() not in [target.parent, *target.parents]:
                 return self.send_json({"error": "log path out of logs directory"}, 400)
             if not admin and not run_owns_file(visible_run, target):
@@ -525,11 +492,11 @@ class Handler(BaseHTTPRequestHandler):
                     stdout = LOG_DIR / f"{base}.log"
                     stderr = LOG_DIR / f"{base}.err.log"
                     args = build_args(cfg)
-                    # Append mode + unique filename: no user's historical log is cleared or overwritten.
+
                     out = open(stdout, "a", encoding="utf-8", buffering=1)
                     err = open(stderr, "a", encoding="utf-8", buffering=1)
                     child_env = os.environ.copy()
-                    # Force UTF-8 for child process logs and argument/env handling on Windows.
+
                     child_env["PYTHONUTF8"] = "1"
                     child_env["PYTHONIOENCODING"] = "utf-8"
                     if str(cfg.get("urp_username") or "").strip():
@@ -634,10 +601,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
                 self.wfile.flush()
             if not running and run:
-                # Keep connection alive a little, then let browser reconnect.
+
                 time.sleep(1)
             time.sleep(1)
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="四川大学SCU_URP自动化抢课可视化网页")
@@ -654,8 +620,5 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
 
-
 if __name__ == "__main__":
     main()
-
-

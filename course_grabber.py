@@ -1,18 +1,3 @@
-﻿#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""四川大学SCU_URP自动化抢课。
-
-This script reuses ``scu_login.py`` for login, queries course lists, polls for
-available seats, and submits the same two-step flow as the browser:
-
-1. POST /student/courseSelect/selectCourse/checkInputCodeAndSubmit
-2. POST /student/courseSelect/selectCourses/waitingfor
-
-After a real submit it can verify the result by checking the quit-course page
-and the failed-course page. A course is treated as truly successful only when it
-appears on the quit-course page.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -30,7 +15,6 @@ import requests
 
 from scu_login import ScuUrpClient, create_logged_in_client
 
-
 INDEX_PATH = "/student/courseSelect/courseSelect/index#iframe-xk"
 SUBMIT_PATH = "/student/courseSelect/selectCourse/checkInputCodeAndSubmit"
 WAITINGFOR_PATH = "/student/courseSelect/selectCourses/waitingfor"
@@ -47,7 +31,6 @@ CATEGORY_INFO: dict[str, dict[str, str]] = {
     "depart": {"path_part": "departCourse", "dealType": "4", "label": "院系课程"},
     "free": {"path_part": "freeCourse", "dealType": "5", "label": "自由课程"},
 }
-
 
 @dataclass
 class CourseTarget:
@@ -74,18 +57,15 @@ class CourseTarget:
             bits.append(f"已选={self.selected_count}")
         return " | ".join(bits)
 
-
 @dataclass
 class ConfirmResult:
-    status: str  # selected / failed / unknown / skipped
+    status: str
     selected: bool = False
     failed: bool = False
     message: str = ""
 
-
 def now() -> str:
     return datetime.now().strftime("%H:%M:%S")
-
 
 def html_unescape_min(text: str) -> str:
     return (
@@ -97,13 +77,11 @@ def html_unescape_min(text: str) -> str:
         .replace("&#39;", "'")
     )
 
-
 def html_to_text(html: str) -> str:
     html = re.sub(r"<script[\s\S]*?</script>", " ", html, flags=re.I)
     html = re.sub(r"<style[\s\S]*?</style>", " ", html, flags=re.I)
     text = re.sub(r"<[^>]+>", " ", html)
     return re.sub(r"\s+", " ", html_unescape_min(text)).strip()
-
 
 def extract_input_value(html: str, input_id_or_name: str) -> str:
     patterns = [
@@ -119,7 +97,6 @@ def extract_input_value(html: str, input_id_or_name: str) -> str:
             return html_unescape_min(v.group(1))
     return ""
 
-
 def extract_hidden_inputs(html: str) -> dict[str, str]:
     out: dict[str, str] = {}
     for m in re.finditer(r"<input[^>]+type=['\"]hidden['\"][^>]*>", html, flags=re.I):
@@ -130,7 +107,6 @@ def extract_hidden_inputs(html: str) -> dict[str, str]:
             out[html_unescape_min(name.group(1))] = html_unescape_min(value.group(1) if value else "")
     return out
 
-
 def extract_tab_paths(index_html: str) -> dict[str, str]:
     found: dict[str, str] = {}
     for category, info in CATEGORY_INFO.items():
@@ -140,11 +116,9 @@ def extract_tab_paths(index_html: str) -> dict[str, str]:
             found[category] = html_unescape_min(m.group(1))
     return found
 
-
 def encode_kcms(text: str) -> str:
-    # Browser JS uses charCodeAt(i) + "," for every character.
-    return "".join(f"{ord(ch)}," for ch in str(text))
 
+    return "".join(f"{ord(ch)}," for ch in str(text))
 
 def as_int_or_none(value: Any) -> Optional[int]:
     if value is None or value == "":
@@ -154,23 +128,14 @@ def as_int_or_none(value: Any) -> Optional[int]:
     except Exception:
         return None
 
-
 def csv_values(value: str) -> list[str]:
     return [x.strip() for x in str(value or "").split(",") if x.strip()]
-
 
 def single_or_empty(value: str) -> str:
     vals = csv_values(value)
     return vals[0] if len(vals) == 1 else ""
 
-
 def split_course_id(course_id: str) -> tuple[str, str, str]:
-    """Parse a user course identifier.
-
-    Accepted forms:
-    - kch                 (course number only; matches exact kch)
-    - kch_kxh             (course number + class/sequence number)
-    """
     parts = [p.strip() for p in str(course_id or "").split("_", 2)]
     if len(parts) == 1 and parts[0]:
         return parts[0], "", ""
@@ -178,22 +143,14 @@ def split_course_id(course_id: str) -> tuple[str, str, str]:
         return parts[0], parts[1], ""
     raise SystemExit("--course-id 格式应为 kch 或 kch_kxh，例如 107121000 或 107121000_01")
 
-
 def course_id_key(course_id: str) -> str:
     kch, kxh, _ = split_course_id(course_id)
     return f"{kch}_{kxh}" if kxh else kch
 
-
 def course_target_key(c: CourseTarget) -> str:
     return f"{c.kch}_{c.kxh}"
 
-
 def args_with_course_id_filters(args: argparse.Namespace) -> argparse.Namespace:
-    """Use --course-id values like 888006010A07_01 as query filters too.
-
-    URP submit still needs the full kcIds returned by courseList, but users only
-    need to type kch_kxh. This helper derives kch/kxh for narrowing courseList.
-    """
     ids = csv_values(getattr(args, "course_id", ""))
     if not ids:
         return args
@@ -209,8 +166,8 @@ def args_with_course_id_filters(args: argparse.Namespace) -> argparse.Namespace:
     for kch, kxh, _ in parsed:
         if kch and kch not in kchs:
             kchs.append(kch)
-        # If any target is course-number-only, do not add a global kxh query
-        # filter; otherwise fuzzy kch-only grabbing would miss other sections.
+
+
         if derive_kxh and kxh and kxh not in kxhs:
             kxhs.append(kxh)
     data = dict(vars(args))
@@ -220,9 +177,7 @@ def args_with_course_id_filters(args: argparse.Namespace) -> argparse.Namespace:
         data["kxh"] = ",".join(kxhs)
     return argparse.Namespace(**data)
 
-
 def iter_dict_courses(data: Any) -> Iterable[dict[str, Any]]:
-    """Yield course dictionaries from common URP courseList response shapes."""
     if isinstance(data, list):
         for item in data:
             if isinstance(item, dict):
@@ -246,7 +201,6 @@ def iter_dict_courses(data: Any) -> Iterable[dict[str, Any]]:
                     for item in sub:
                         if isinstance(item, dict):
                             yield item
-
 
 def normalize_course(category: str, item: dict[str, Any]) -> Optional[CourseTarget]:
     if category == "plan":
@@ -274,7 +228,6 @@ def normalize_course(category: str, item: dict[str, Any]) -> Optional[CourseTarg
         raw=item,
     )
 
-
 class CourseGrabber:
     def __init__(self, client: ScuUrpClient, *, verbose: bool = True, retries: int = 4) -> None:
         self.client = client
@@ -294,7 +247,6 @@ class CourseGrabber:
             print(f"[{now()}] {msg}", flush=True)
 
     def request(self, method: str, path_or_url: str, **kwargs: Any) -> requests.Response:
-        """Request with retry for transient 502/503/504/network failures."""
         last_exc: Exception | None = None
         for attempt in range(1, self.retries + 1):
             try:
@@ -418,7 +370,7 @@ class CourseGrabber:
         effective_args = args_with_course_id_filters(args)
         query_args = [effective_args]
         kxhs = csv_values(effective_args.kxh)
-        # Some URP endpoints miss classes when kxh is not a single value.
+
         if len(kxhs) > 1:
             query_args = [argparse.Namespace(**{**vars(effective_args), "kxh": kxh}) for kxh in kxhs]
 
@@ -451,7 +403,6 @@ class CourseGrabber:
         return courses
 
     def enrich_selected_count(self, category: str, target: CourseTarget) -> None:
-        """Fetch the real selected-student count shown by the page's 点击查看 button."""
         if target.selected_count is not None:
             return
         try:
@@ -487,7 +438,7 @@ class CourseGrabber:
                 if kxh:
                     matched = c.kch == kch and c.kxh == kxh
                 else:
-                    # Exact equality only: input "123456" must not match "1234567".
+
                     matched = c.kch == kch
                 if matched:
                     break
@@ -551,8 +502,8 @@ class CourseGrabber:
         if data.get("token"):
             self.token = str(data["token"])
 
-        # Browser behavior: after checkInputCodeAndSubmit returns ok, submit the
-        # iframe form to WAITINGFOR_PATH. Without this step, it is not a real selection.
+
+
         if data.get("result") == "ok" and not getattr(args, "skip_waitingfor", False):
             waiting_payload = {k: v for k, v in payload.items() if k not in {"inputCode", "tokenValue"}}
             wait_resp = self.request(
@@ -580,12 +531,6 @@ class CourseGrabber:
         return data
 
     def submit_fire_and_forget(self, category: str, target: CourseTarget, args: argparse.Namespace) -> dict[str, Any]:
-        """Start/keep a fuzzy-submit worker in the background and return immediately.
-
-        Used for kch-only/name-only fuzzy grabbing. One worker is kept per
-        concrete course section. If a section returns a "not grabbed" response
-        first, that worker immediately resubmits it.
-        """
         if args.dry_run:
             payload = self.build_submit_payload(category, target, args)
             self.log("dry-run：不真实提交，仅打印 payload")
@@ -645,8 +590,8 @@ class CourseGrabber:
                         self.log(f"选课系统未开放模式：提交暂未进入/未成功，继续重提：{target.display_name} result={result_text[:80]} {msg}")
                     else:
                         self.log(f"后台提交没抢到，继续重提：{target.display_name} result={result_text[:80]} {msg}")
-                    # Do not wait: whichever section gets a failed response first
-                    # immediately loops and resubmits first.
+
+
             finally:
                 with self.fuzzy_lock:
                     self.fuzzy_active.discard(key)
@@ -656,7 +601,6 @@ class CourseGrabber:
         return {"result": "queued", "final_status": "queued"}
 
     def confirm_submit(self, target: CourseTarget, *, attempts: int = 4) -> ConfirmResult:
-        """Confirm final result: selected if course appears on quit page; failed if on failed page."""
         for i in range(1, max(1, attempts) + 1):
             if i > 1:
                 time.sleep(min(2 * i, 8))
@@ -693,8 +637,8 @@ class CourseGrabber:
         if not course_ids and csv_values(args.kch) and not csv_values(args.kxh):
             fuzzy_all_sections = True
         if not course_ids and args.name:
-            # Match by exact course name (and optional teacher) with the same
-            # rapid retry logic as kch-only fuzzy grabbing.
+
+
             fuzzy_all_sections = True
         if fuzzy_all_sections:
             self.log("提醒：该方案短时间提交次数过多，存在风控风险。推荐三个及以下精准选择课程抢课。")
@@ -801,7 +745,6 @@ class CourseGrabber:
                 )
             time.sleep(max(0.8, sleep_interval + random.uniform(0, sleep_jitter)))
 
-
 def create_client_with_retry(args: argparse.Namespace) -> ScuUrpClient:
     kwargs: dict[str, Any] = {
         "max_attempts": args.max_login_attempts,
@@ -825,13 +768,11 @@ def create_client_with_retry(args: argparse.Namespace) -> ScuUrpClient:
     assert last_exc is not None
     raise last_exc
 
-
 def print_courses(courses: list[CourseTarget], *, limit: int) -> None:
     for idx, c in enumerate(courses[:limit], 1):
         print(f"{idx:03d}. {c.display_name}")
     if len(courses) > limit:
         print(f"... 还有 {len(courses) - limit} 条，使用 --limit 调整")
-
 
 def add_common_sub_args(sp: argparse.ArgumentParser) -> None:
     sp.add_argument("--category", choices=sorted(CATEGORY_INFO), default="plan")
@@ -863,7 +804,6 @@ def add_common_sub_args(sp: argparse.ArgumentParser) -> None:
     sp.set_defaults(confirm=True)
     sp.add_argument("--confirm-attempts", type=int, default=4, help="确认结果重试次数")
 
-
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="四川大学SCU_URP自动化抢课")
     p.add_argument("--username", default=None, help="覆盖 scu_login.py/env 中的用户名")
@@ -884,7 +824,6 @@ def build_parser() -> argparse.ArgumentParser:
     sub.choices["grab"].add_argument("--no-poll", action="store_true", help="不轮询，查询到目标后提交一轮")
     sub.choices["grab"].add_argument("--system-not-open", action="store_true", help="选课系统未开放/不稳定时使用已缓存目标继续提交；不读取已选人数以降低延迟")
     return p
-
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = build_parser().parse_args(argv)
@@ -916,7 +855,6 @@ def main(argv: Optional[list[str]] = None) -> int:
         return grabber.grab(args.category, args)
 
     return 1
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
