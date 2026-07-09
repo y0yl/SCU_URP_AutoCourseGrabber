@@ -1,8 +1,9 @@
 # 四川大学SCU_URP自动化抢课
 
 四川大学 SCU URP 选课系统自动化抢课工具，包含命令行抢课脚本和本地可视化网页控制台。
+本人已亲自验证该脚本按照推荐频率长时间执行不会被教务处标记，并能成功提交课程（2026.7月正选）。
 
-> Keywords: 四川大学, SCU, Sichuan University, URP, SCU URP, 四川大学URP, 抢课, 自动抢课, 选课, 选课系统, 课程抢课, course selection, course grabber, course enrollment automation, webui
+当脚本执行时已选人数减少或者已选人数不符合满课人数特征时，脚本将增加可能抢到该课程的附加日志并适当减小频率。
 
 ## 项目简介
 
@@ -13,25 +14,6 @@
 - `webui_server.py`：本地可视化控制台，支持配置、启动/停止任务、查看实时日志
 - `webui/`：浏览器网页界面
 
-## 适合搜索的相关主题
-
-- 四川大学抢课
-- 四川大学选课
-- 四川大学 URP
-- SCU URP
-- SCU course grabber
-- SCU course selection automation
-- URP 自动化抢课
-- URP 选课脚本
-- Python 抢课脚本
-
-## 快速启动
-
-```powershell
-python .\webui_server.py
-```
-
-浏览器打开：<http://127.0.0.1:8765>
 
 ## 更多说明
 
